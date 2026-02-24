@@ -20,17 +20,15 @@ If no key is found, it throws:
 
 - `MiniMax API key missing. Set MINIMAX_API_KEY.`
 
-Endpoint selection (optional):
+Endpoint selection:
 
-1. `MINIMAX_ENDPOINT`
-2. `ENDPOINT`
-
-Supported values:
-
-- `CN` / `国内` -> use China endpoint (`api.minimaxi.com`)
-- `GLOBAL` / `全球` -> use global endpoint (`api.minimax.io`)
-
-Default: `GLOBAL` (if endpoint value is missing or unrecognized)
+- Fully automatic (no endpoint env var needed).
+- Region attempt order:
+  - with `MINIMAX_CN_API_KEY`: `CN -> GLOBAL`
+  - without `MINIMAX_CN_API_KEY`: `GLOBAL -> CN`
+- Key lookup by region:
+  - in `CN`: `MINIMAX_CN_API_KEY` -> `MINIMAX_API_KEY` -> `MINIMAX_API_TOKEN`
+  - in `GLOBAL`: `MINIMAX_API_KEY` -> `MINIMAX_API_TOKEN`
 
 ## Data Source
 
@@ -49,7 +47,7 @@ Fallbacks:
 - `https://api.minimax.io/v1/coding_plan/remains`
 - `https://www.minimax.io/v1/api/openplatform/coding_plan/remains` (legacy fallback; can return Cloudflare HTML)
 
-When endpoint is set to `CN` / `国内`, requests use:
+When the selected region is `CN`, requests use:
 
 - `https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains`
 - `https://api.minimaxi.com/v1/coding_plan/remains`
@@ -81,7 +79,7 @@ Expected payload fields:
 
 - **Plan**: best-effort from API payload (normalized to concise label)
 - **Session** (overview progress line):
-  - `label`: `Session`
+  - `label`: `Session (CN)` or `Session (GLOBAL)` based on selected endpoint
   - `format`: count (`prompts`)
   - `used`: computed used prompts
   - `limit`: total prompt limit for current window

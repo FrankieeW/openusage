@@ -6,8 +6,8 @@
   ]
   const CN_PRIMARY_USAGE_URL = "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains"
   const CN_FALLBACK_USAGE_URLS = ["https://api.minimaxi.com/v1/coding_plan/remains"]
-  const API_KEY_ENV_VARS = ["MINIMAX_API_KEY", "MINIMAX_API_TOKEN"]
-  const ENDPOINT_ENV_VARS = ["MINIMAX_ENDPOINT", "ENDPOINT"]
+  const GLOBAL_API_KEY_ENV_VARS = ["MINIMAX_API_KEY", "MINIMAX_API_TOKEN"]
+  const CN_API_KEY_ENV_VARS = ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY", "MINIMAX_API_TOKEN"]
   const CODING_PLAN_WINDOW_MS = 5 * 60 * 60 * 1000
   const CODING_PLAN_WINDOW_TOLERANCE_MS = 10 * 60 * 1000
   const PROMPT_LIMIT_TO_PLAN = {
@@ -99,9 +99,10 @@
     return secOverflow <= msOverflow ? asSecondsMs : asMillisecondsMs
   }
 
-  function loadApiKey(ctx) {
-    for (let i = 0; i < API_KEY_ENV_VARS.length; i += 1) {
-      const name = API_KEY_ENV_VARS[i]
+  function loadApiKey(ctx, endpointSelection) {
+    const envVars = endpointSelection === "CN" ? CN_API_KEY_ENV_VARS : GLOBAL_API_KEY_ENV_VARS
+    for (let i = 0; i < envVars.length; i += 1) {
+      const name = envVars[i]
       let value = null
       try {
         value = ctx.host.env.get(name)
@@ -111,57 +112,15 @@
       const key = readString(value)
       if (key) {
         ctx.host.log.info("api key loaded from " + name)
-        return key
+        return { value: key, source: name }
       }
     }
-    return null
-  }
-
-  function normalizeEndpointSelection(value) {
-    const raw = readString(value)
-    if (!raw) return null
-
-    const compact = raw.toLowerCase().replace(/\s+/g, " ").trim()
-    const withoutPrefix = compact.replace(/^endpoint\s*[:=]?\s*/i, "").trim()
-
-    if (
-      withoutPrefix === "cn" ||
-      withoutPrefix === "china" ||
-      withoutPrefix === "国内" ||
-      withoutPrefix.includes("minimaxi.com")
-    ) {
-      return "CN"
-    }
-
-    if (
-      withoutPrefix === "global" ||
-      withoutPrefix === "全球" ||
-      withoutPrefix === "intl" ||
-      withoutPrefix === "international" ||
-      withoutPrefix.includes("minimax.io")
-    ) {
-      return "GLOBAL"
-    }
-
     return null
   }
 
   function loadEndpointSelection(ctx) {
-    for (let i = 0; i < ENDPOINT_ENV_VARS.length; i += 1) {
-      const name = ENDPOINT_ENV_VARS[i]
-      let value = null
-      try {
-        value = ctx.host.env.get(name)
-      } catch (e) {
-        ctx.host.log.warn("env read failed for " + name + ": " + String(e))
-      }
-      const selection = normalizeEndpointSelection(value)
-      if (selection) {
-        ctx.host.log.info("endpoint selected from " + name + ": " + selection)
-        return selection
-      }
-    }
-    return "GLOBAL"
+    // Always auto-detect region from available keys and probe result.
+    return "AUTO"
   }
 
   function getUsageUrls(endpointSelection) {
@@ -171,7 +130,26 @@
     return [GLOBAL_PRIMARY_USAGE_URL].concat(GLOBAL_FALLBACK_USAGE_URLS)
   }
 
-  function parsePayloadShape(ctx, payload) {
+  function endpointAttempts(ctx, selection) {
+    if (selection === "CN") return ["CN"]
+    if (selection === "GLOBAL") return ["GLOBAL"]
+
+    // AUTO: if CN key exists, try CN first; otherwise try GLOBAL first.
+    let cnApiKeyValue = null
+    try {
+      cnApiKeyValue = ctx.host.env.get("MINIMAX_CN_API_KEY")
+    } catch (e) {
+      ctx.host.log.warn("env read failed for MINIMAX_CN_API_KEY: " + String(e))
+    }
+    if (readString(cnApiKeyValue)) return ["CN", "GLOBAL"]
+    return ["GLOBAL", "CN"]
+  }
+
+  function formatAuthError() {
+    return "Session expired. Check your MiniMax API key."
+  }
+
+  function parsePayloadShape(ctx, payload, endpointSelection, keySource) {
     if (!payload || typeof payload !== "object") return null
 
     const data = payload.data && typeof payload.data === "object" ? payload.data : payload
@@ -187,7 +165,7 @@
         normalized.includes("log in") ||
         normalized.includes("login")
       ) {
-        throw "Session expired. Check your MiniMax API key."
+        throw formatAuthError(endpointSelection, keySource)
       }
       throw statusMessage
         ? "MiniMax API error: " + statusMessage
@@ -289,7 +267,7 @@
     }
   }
 
-  function fetchUsagePayload(ctx, apiKey, endpointSelection) {
+  function fetchUsagePayload(ctx, apiKey, endpointSelection, keySource) {
     const urls = getUsageUrls(endpointSelection)
     let lastStatus = null
     let hadNetworkError = false
@@ -336,7 +314,7 @@
     }
 
     if (authStatusCount > 0 && lastStatus === null && !hadNetworkError) {
-      throw "Session expired. Check your MiniMax API key."
+      throw formatAuthError(endpointSelection, keySource)
     }
     if (lastStatus !== null) throw "Request failed (HTTP " + lastStatus + "). Try again later."
     if (hadNetworkError) throw "Request failed. Check your connection."
@@ -344,16 +322,36 @@
   }
 
   function probe(ctx) {
-    const apiKey = loadApiKey(ctx)
-    if (!apiKey) throw "MiniMax API key missing. Set MINIMAX_API_KEY."
-
     const endpointSelection = loadEndpointSelection(ctx)
-    const payload = fetchUsagePayload(ctx, apiKey, endpointSelection)
-    const parsed = parsePayloadShape(ctx, payload)
-    if (!parsed) throw "Could not parse usage data."
+    const attempts = endpointAttempts(ctx, endpointSelection)
+    let lastError = null
+    let parsed = null
+    let resolvedEndpoint = null
+
+    for (let i = 0; i < attempts.length; i += 1) {
+      const endpoint = attempts[i]
+      const apiKeyInfo = loadApiKey(ctx, endpoint)
+      if (!apiKeyInfo) continue
+      try {
+        const payload = fetchUsagePayload(ctx, apiKeyInfo.value, endpoint, apiKeyInfo.source)
+        parsed = parsePayloadShape(ctx, payload, endpoint, apiKeyInfo.source)
+        if (parsed) {
+          resolvedEndpoint = endpoint
+          break
+        }
+        lastError = "Could not parse usage data."
+      } catch (e) {
+        lastError = String(e)
+      }
+    }
+
+    if (!parsed) {
+      if (lastError) throw lastError
+      throw "MiniMax API key missing. Set MINIMAX_API_KEY."
+    }
 
     const line = {
-      label: "Session",
+      label: resolvedEndpoint ? "Session (" + resolvedEndpoint + ")" : "Session",
       used: parsed.used,
       limit: parsed.total,
       format: { kind: "count", suffix: "prompts" },
