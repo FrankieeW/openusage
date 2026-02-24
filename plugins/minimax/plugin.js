@@ -141,6 +141,64 @@
     return "Session expired. Check your MiniMax API key."
   }
 
+  /**
+   * Tries multiple URL candidates and returns the first successful response.
+   * @returns {object} parsed JSON response
+   * @throws {string} error message
+   */
+  function tryUrls(ctx, urls, apiKey) {
+    let lastStatus = null
+    let hadNetworkError = false
+    let authStatusCount = 0
+
+    for (let i = 0; i < urls.length; i += 1) {
+      const url = urls[i]
+      let resp
+      try {
+        resp = ctx.util.request({
+          method: "GET",
+          url: url,
+          headers: {
+            Authorization: "Bearer " + apiKey,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          timeoutMs: 15000,
+        })
+      } catch (e) {
+        hadNetworkError = true
+        ctx.host.log.warn("request failed (" + url + "): " + String(e))
+        continue
+      }
+
+      if (ctx.util.isAuthStatus(resp.status)) {
+        authStatusCount += 1
+        ctx.host.log.warn("request returned auth status " + resp.status + " (" + url + ")")
+        continue
+      }
+      if (resp.status < 200 || resp.status >= 300) {
+        lastStatus = resp.status
+        ctx.host.log.warn("request returned status " + resp.status + " (" + url + ")")
+        continue
+      }
+
+      const parsed = ctx.util.tryParseJson(resp.bodyText)
+      if (!parsed || typeof parsed !== "object") {
+        ctx.host.log.warn("request returned invalid JSON (" + url + ")")
+        continue
+      }
+
+      return parsed
+    }
+
+    if (authStatusCount > 0 && lastStatus === null && !hadNetworkError) {
+      throw formatAuthError()
+    }
+    if (lastStatus !== null) throw "Request failed (HTTP " + lastStatus + "). Try again later."
+    if (hadNetworkError) throw "Request failed. Check your connection."
+    throw "Could not parse usage data."
+  }
+
   function parsePayloadShape(ctx, payload) {
     if (!payload || typeof payload !== "object") return null
 
@@ -260,63 +318,14 @@
   }
 
   function fetchUsagePayload(ctx, apiKey, endpointSelection) {
-    const urls = getUsageUrls(endpointSelection)
-    let lastStatus = null
-    let hadNetworkError = false
-    let authStatusCount = 0
-
-    for (let i = 0; i < urls.length; i += 1) {
-      const url = urls[i]
-      let resp
-      try {
-        resp = ctx.util.request({
-          method: "GET",
-          url: url,
-          headers: {
-            Authorization: "Bearer " + apiKey,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          timeoutMs: 15000,
-        })
-      } catch (e) {
-        hadNetworkError = true
-        ctx.host.log.warn("request failed (" + url + "): " + String(e))
-        continue
-      }
-
-      if (ctx.util.isAuthStatus(resp.status)) {
-        authStatusCount += 1
-        ctx.host.log.warn("request returned auth status " + resp.status + " (" + url + ")")
-        continue
-      }
-      if (resp.status < 200 || resp.status >= 300) {
-        lastStatus = resp.status
-        ctx.host.log.warn("request returned status " + resp.status + " (" + url + ")")
-        continue
-      }
-
-      const parsed = ctx.util.tryParseJson(resp.bodyText)
-      if (!parsed || typeof parsed !== "object") {
-        ctx.host.log.warn("request returned invalid JSON (" + url + ")")
-        continue
-      }
-
-      return parsed
-    }
-
-    if (authStatusCount > 0 && lastStatus === null && !hadNetworkError) {
-      throw formatAuthError()
-    }
-    if (lastStatus !== null) throw "Request failed (HTTP " + lastStatus + "). Try again later."
-    if (hadNetworkError) throw "Request failed. Check your connection."
-    throw "Could not parse usage data."
+    return tryUrls(ctx, getUsageUrls(endpointSelection), apiKey)
   }
 
   function probe(ctx) {
     const attempts = endpointAttempts(ctx)
     let lastError = null
     let parsed = null
+    let successfulEndpoint = null
 
     for (let i = 0; i < attempts.length; i += 1) {
       const endpoint = attempts[i]
@@ -325,7 +334,10 @@
       try {
         const payload = fetchUsagePayload(ctx, apiKeyInfo.value, endpoint)
         parsed = parsePayloadShape(ctx, payload)
-        if (parsed) break
+        if (parsed) {
+          successfulEndpoint = endpoint
+          break
+        }
         if (!lastError) lastError = "Could not parse usage data."
       } catch (e) {
         if (!lastError) lastError = String(e)
@@ -347,7 +359,10 @@
     if (parsed.periodDurationMs !== null) line.periodDurationMs = parsed.periodDurationMs
 
     const result = { lines: [ctx.line.progress(line)] }
-    if (parsed.planName) result.plan = parsed.planName
+    if (parsed.planName) {
+      const regionLabel = successfulEndpoint === "CN" ? " (CN)" : " (GLOBAL)"
+      result.plan = parsed.planName + regionLabel
+    }
     return result
   }
 

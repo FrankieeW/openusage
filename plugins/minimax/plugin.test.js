@@ -101,11 +101,12 @@ describe("minimax plugin", () => {
     })
 
     const plugin = await loadPlugin()
-    plugin.probe(ctx)
+    const result = plugin.probe(ctx)
 
     const call = ctx.host.http.request.mock.calls[0][0]
     expect(call.url).toBe(CN_PRIMARY_USAGE_URL)
     expect(call.headers.Authorization).toBe("Bearer cn-key")
+    expect(result.plan).toBe("Plus (CN)")
   })
 
   it("prefers MINIMAX_CN_API_KEY in AUTO mode when both keys exist", async () => {
@@ -121,11 +122,12 @@ describe("minimax plugin", () => {
     })
 
     const plugin = await loadPlugin()
-    plugin.probe(ctx)
+    const result = plugin.probe(ctx)
 
     const call = ctx.host.http.request.mock.calls[0][0]
     expect(call.url).toBe(CN_PRIMARY_USAGE_URL)
     expect(call.headers.Authorization).toBe("Bearer cn-key")
+    expect(result.plan).toBe("Plus (CN)")
   })
 
   it("uses MINIMAX_API_KEY when CN key is missing", async () => {
@@ -184,6 +186,7 @@ describe("minimax plugin", () => {
     const result = plugin.probe(ctx)
 
     expect(result.lines[0].used).toBe(120)
+    expect(result.plan).toBe("Plus (CN)")
     const first = ctx.host.http.request.mock.calls[0][0].url
     const last = ctx.host.http.request.mock.calls[ctx.host.http.request.mock.calls.length - 1][0].url
     expect(first).toBe(PRIMARY_USAGE_URL)
@@ -234,7 +237,7 @@ describe("minimax plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
 
-    expect(result.plan).toBe("Plus")
+    expect(result.plan).toBe("Plus (GLOBAL)")
     expect(result.lines.length).toBe(1)
     const line = result.lines[0]
     expect(line.label).toBe("Session")
@@ -293,7 +296,7 @@ describe("minimax plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
 
-    expect(result.plan).toBe("Starter")
+    expect(result.plan).toBe("Starter (GLOBAL)")
     expect(result.lines[0].used).toBe(300)
     expect(result.lines[0].limit).toBe(1500)
   })
@@ -350,7 +353,7 @@ describe("minimax plugin", () => {
     const line = result.lines[0]
     const expectedReset = new Date(1700000000000 + 7200 * 1000).toISOString()
 
-    expect(result.plan).toBe("Max")
+    expect(result.plan).toBe("Max (GLOBAL)")
     expect(line.used).toBe(60)
     expect(line.limit).toBe(100)
     expect(line.resetsAt).toBe(expectedReset)
@@ -409,7 +412,7 @@ describe("minimax plugin", () => {
     const result = plugin.probe(ctx)
     const line = result.lines[0]
 
-    expect(result.plan).toBe("Pro")
+    expect(result.plan).toBe("Pro (GLOBAL)")
     expect(line.used).toBe(180)
     expect(line.limit).toBe(300)
   })
@@ -641,7 +644,7 @@ describe("minimax plugin", () => {
 
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
-    expect(result.plan).toBe("Coding Plan")
+    expect(result.plan).toBe("Coding Plan (GLOBAL)")
   })
 
   it("supports payload.modelRemains and remains-count aliases", async () => {
@@ -665,7 +668,7 @@ describe("minimax plugin", () => {
 
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
-    expect(result.plan).toBe("Team")
+    expect(result.plan).toBe("Team (GLOBAL)")
     expect(result.lines[0].used).toBe(180)
     expect(result.lines[0].limit).toBe(300)
   })
