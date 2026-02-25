@@ -111,7 +111,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
 
   build:
-    needs: bump-version
+    needs: [bump-version, build]
     strategy:
       fail-fast: false
       matrix:
