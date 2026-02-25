@@ -66,10 +66,14 @@ jobs:
           git remote add upstream https://github.com/robinebers/openusage.git
           git fetch upstream main
           git merge upstream/main --no-edit --allow-unrelated-histories || {
-            # Handle merge conflict - accept theirs for .gitignore
-            git checkout --theirs .gitignore
-            git add .gitignore
-            git commit -m "chore: resolve merge conflict in .gitignore"
+            # Handle merge conflicts - accept ours for version files
+            for f in package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json .gitignore; do
+              if [[ -f "$f" ]] && grep -q "^<<<<<<<" "$f" 2>/dev/null; then
+                git checkout --ours "$f"
+                git add "$f"
+              fi
+            done
+            git commit -m "chore: resolve merge conflicts"
           }
 
       - name: Bump version
