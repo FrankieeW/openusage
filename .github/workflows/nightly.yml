@@ -95,7 +95,7 @@ jobs:
       - name: Update Cargo.toml
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
       - name: Commit version bump
         run: |
