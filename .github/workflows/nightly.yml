@@ -188,8 +188,8 @@ jobs:
           args: ${{ matrix.args }}
 
   verify-release:
-    needs: build
-    if: needs.build.result == 'success'
+    needs: bump-version
+    if: needs.bump-version.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Verify release created
