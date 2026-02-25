@@ -1,5 +1,7 @@
 name: Nightly Build
 
+# Nightly builds that merge upstream and publish pre-releases
+
 on:
   schedule:
     - cron: "0 0 * * *"  # Daily at UTC 00:00
