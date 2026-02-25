@@ -65,7 +65,12 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git remote add upstream https://github.com/robinebers/openusage.git
           git fetch upstream main
-          git merge upstream/main --no-edit --allow-unrelated-histories
+          git merge upstream/main --no-edit --allow-unrelated-histories || {
+            # Handle merge conflict - accept theirs for .gitignore
+            git checkout --theirs .gitignore
+            git add .gitignore
+            git commit -m "chore: resolve merge conflict in .gitignore"
+          }
 
       - name: Bump version
         id: version
