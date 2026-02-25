@@ -1,0 +1,202 @@
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # Daily at UTC 00:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Base version to bump from (should match latest release)
+  BASE_VERSION: "0.6.8"
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nightly
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/robinebers/openusage.git
+          git fetch upstream main
+
+      - name: Check for new commits
+        id: check
+        run: |
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+          LOCAL_SHA=$(git rev-parse nightly)
+
+          echo "Upstream main: $UPSTREAM_SHA"
+          echo "Local nightly:  $LOCAL_SHA"
+
+          if [ "$UPSTREAM_SHA" != "$LOCAL_SHA" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Upstream has new commits"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No new commits, exiting"
+          fi
+
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+
+  bump-version:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nightly
+
+      - name: Fetch upstream and merge
+        run: |
+          git remote add upstream https://github.com/robinebers/openusage.git
+          git fetch upstream main
+          git merge upstream/main --no-edit
+
+      - name: Bump version
+        id: version
+        run: |
+          TIMESTAMP=$(date -u +%Y%m%d%H%M)
+          VERSION="$BASE_VERSION-dev.$TIMESTAMP"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Bumping to $VERSION"
+
+      - name: Update package.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          node -p "JSON.stringify({...require('./package.json'), version: '$VERSION'}, null, 2)" > package.json.tmp
+          mv package.json.tmp package.json
+
+      - name: Update tauri.conf.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          node -p "JSON.stringify({...require('./src-tauri/tauri.conf.json'), version: '$VERSION'}, null, 2)" > src-tauri/tauri.conf.json.tmp
+          mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+
+      - name: Update Cargo.toml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+
+      - name: Commit version bump
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git commit -m "chore: nightly bump to ${{ steps.version.outputs.version }}"
+          git push origin nightly
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  build:
+    needs: bump-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+    runs-on: ${{ matrix.platform }}
+    env:
+      VERSION: ${{ needs.bump-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nightly
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+      - run: bun install
+      - name: Bundle plugins
+        run: bun run bundle:plugins
+      - name: Verify bundled plugins
+        run: |
+          COUNT=$(find src-tauri/resources/bundled_plugins -maxdepth 2 -name plugin.json | wc -l | tr -d ' ')
+          if [[ "$COUNT" -lt 1 ]]; then
+            echo "No bundled plugins found under src-tauri/resources/bundled_plugins."
+            exit 1
+          fi
+
+      - name: Import Apple Developer Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm certificate.p12
+
+      - name: Build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        with:
+          tagName: nightly-${{ env.VERSION }}
+          releaseName: Nightly ${{ env.VERSION }}
+          releaseDraft: false
+          prerelease: true
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  verify-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify release created
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.bump-version.outputs.version }}
+        run: |
+          TAG="nightly-$VERSION"
+          echo "Checking release $TAG..."
+
+          # Check release exists
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" || { echo "Release not found"; exit 1; }
+
+          # Check for updater assets
+          ASSETS=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | tr -d '\r')
+
+          echo "Assets: $ASSETS"
+
+          echo "$ASSETS" | grep -Fxq 'latest.json' || { echo "Missing updater manifest: latest.json"; exit 1; }
+          echo "$ASSETS" | grep -Eq '\.sig$' || { echo "Missing updater signatures (.sig)"; exit 1; }
+
+          echo "Release verified successfully!"
