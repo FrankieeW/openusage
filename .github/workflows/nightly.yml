@@ -45,9 +45,6 @@ jobs:
             echo "No new commits, exiting"
           fi
 
-    outputs:
-      has_changes: ${{ steps.check.outputs.has_changes }}
-
   bump-version:
     needs: check-upstream
     if: needs.check-upstream.outputs.has_changes == 'true'
