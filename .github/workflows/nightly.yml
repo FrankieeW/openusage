@@ -61,6 +61,8 @@ jobs:
 
       - name: Fetch upstream and merge
         run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
           git remote add upstream https://github.com/robinebers/openusage.git
           git fetch upstream main
           git merge upstream/main --no-edit --allow-unrelated-histories
@@ -92,8 +94,6 @@ jobs:
 
       - name: Commit version bump
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
           git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
           git commit -m "chore: nightly bump to ${{ steps.version.outputs.version }}"
           git push origin nightly
