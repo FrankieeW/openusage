@@ -63,7 +63,7 @@ jobs:
         run: |
           git remote add upstream https://github.com/robinebers/openusage.git
           git fetch upstream main
-          git merge upstream/main --no-edit
+          git merge upstream/main --no-edit --allow-unrelated-histories
 
       - name: Bump version
         id: version
