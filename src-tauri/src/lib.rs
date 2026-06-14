@@ -6,6 +6,7 @@ mod log_path;
 mod panel;
 mod plugin_engine;
 mod tray;
+mod hub;
 #[cfg(target_os = "macos")]
 mod webkit_config;
 
