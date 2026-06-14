@@ -149,6 +149,192 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct OrphanReport {
+    pub removed_cache_dirs: Vec<String>,
+    pub unmanaged_plugins: Vec<String>,
+    pub orphan_source_plugins: Vec<String>,
+}
+
+pub fn startup_sweep(
+    hub_dir: &Path,
+    plugins_dir: &Path,
+    registry: &crate::hub::registry::RegistryFile,
+) -> OrphanReport {
+    use std::collections::HashSet;
+    let mut report = OrphanReport::default();
+    let valid_ids: HashSet<&str> = registry
+        .sources
+        .iter()
+        .map(|s| s.id.as_str())
+        .collect();
+
+    let cache_dir = hub_dir.join("cache");
+    if cache_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy().to_string();
+                if !valid_ids.contains(name_str.as_str()) {
+                    let path = entry.path();
+                    if path.is_dir() && std::fs::remove_dir_all(&path).is_ok() {
+                        log::info!("hub sweep: removed orphan cache {}", name_str);
+                        report.removed_cache_dirs.push(name_str);
+                    }
+                }
+            }
+        }
+    }
+
+    if plugins_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(plugins_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy().to_string();
+                if !path.is_dir() {
+                    continue;
+                }
+                match read_install_metadata(plugins_dir, &name_str) {
+                    Some(m) => {
+                        if !valid_ids.contains(m.source_id.as_str()) {
+                            report.orphan_source_plugins.push(name_str);
+                        }
+                    }
+                    None => {
+                        report.unmanaged_plugins.push(name_str);
+                    }
+                }
+            }
+        }
+    }
+
+    report
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+    use crate::hub::registry::{RegistryFile, Source, CURRENT_VERSION};
+    use crate::hub::source::SourceKind;
+    use std::fs;
+
+    fn tempdir(label: &str) -> PathBuf {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "openusage-hub-sweep-{}-{}-{}",
+            label,
+            std::process::id(),
+            suffix
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn source(id: &str) -> Source {
+        Source {
+            id: id.into(),
+            label: id.into(),
+            url: "https://github.com/foo/bar".into(),
+            kind: SourceKind::Github,
+            added_at: 0,
+            last_refreshed_at: None,
+            auto_check: false,
+        }
+    }
+
+    fn write_metadata(install_dir: &Path, plugin_id: &str, source_id: &str) {
+        let m = InstallMetadata {
+            source_id: source_id.into(),
+            source_url: "https://github.com/foo/bar".into(),
+            plugin_id: plugin_id.into(),
+            installed_version: "0.6.27".into(),
+            installed_at: 0,
+        };
+        write_install_metadata(install_dir, &m).unwrap();
+    }
+
+    #[test]
+    fn sweep_removes_orphan_cache_dirs() {
+        let hub = tempdir("hub");
+        let plugins = tempdir("plugins");
+        let cache = hub.join("cache");
+        fs::create_dir_all(cache.join("valid-source")).unwrap();
+        fs::create_dir_all(cache.join("removed-source")).unwrap();
+        let registry = RegistryFile {
+            version: CURRENT_VERSION,
+            sources: vec![source("valid-source")],
+        };
+        let report = startup_sweep(&hub, &plugins, &registry);
+        assert_eq!(report.removed_cache_dirs, vec!["removed-source".to_string()]);
+        assert!(cache.join("valid-source").exists());
+        assert!(!cache.join("removed-source").exists());
+    }
+
+    #[test]
+    fn sweep_identifies_unmanaged_plugins() {
+        let hub = tempdir("hub");
+        let plugins = tempdir("plugins");
+        fs::create_dir_all(plugins.join("manual")).unwrap();
+        let registry = RegistryFile {
+            version: CURRENT_VERSION,
+            sources: vec![],
+        };
+        let report = startup_sweep(&hub, &plugins, &registry);
+        assert_eq!(report.unmanaged_plugins, vec!["manual".to_string()]);
+        assert!(plugins.join("manual").exists());
+    }
+
+    #[test]
+    fn sweep_identifies_plugins_with_removed_source() {
+        let hub = tempdir("hub");
+        let plugins = tempdir("plugins");
+        fs::create_dir_all(plugins.join("orphan")).unwrap();
+        write_metadata(&plugins, "orphan", "removed-source");
+        let registry = RegistryFile {
+            version: CURRENT_VERSION,
+            sources: vec![source("other-source")],
+        };
+        let report = startup_sweep(&hub, &plugins, &registry);
+        assert_eq!(
+            report.orphan_source_plugins,
+            vec!["orphan".to_string()]
+        );
+        assert!(plugins.join("orphan").exists());
+    }
+
+    #[test]
+    fn sweep_keeps_plugins_with_valid_source() {
+        let hub = tempdir("hub");
+        let plugins = tempdir("plugins");
+        fs::create_dir_all(plugins.join("claude")).unwrap();
+        write_metadata(&plugins, "claude", "valid-source");
+        let registry = RegistryFile {
+            version: CURRENT_VERSION,
+            sources: vec![source("valid-source")],
+        };
+        let report = startup_sweep(&hub, &plugins, &registry);
+        assert_eq!(report.orphan_source_plugins, Vec::<String>::new());
+        assert_eq!(report.unmanaged_plugins, Vec::<String>::new());
+        assert_eq!(report.removed_cache_dirs, Vec::<String>::new());
+    }
+
+    #[test]
+    fn sweep_empty_dirs_reports_nothing() {
+        let hub = tempdir("hub");
+        let plugins = tempdir("plugins");
+        let registry = RegistryFile {
+            version: CURRENT_VERSION,
+            sources: vec![],
+        };
+        let report = startup_sweep(&hub, &plugins, &registry);
+        assert_eq!(report, OrphanReport::default());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

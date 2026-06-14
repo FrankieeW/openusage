@@ -44,6 +44,7 @@ fn load_active_plugins_from_dir(plugins_dir: &Path) -> Vec<LoadedPlugin> {
         .collect()
 }
 
+#[allow(dead_code)] // wired by hub/install.rs hot-reload in a later commit
 pub fn reload_from_install_dir(plugins_dir: &Path) -> Vec<LoadedPlugin> {
     load_active_plugins_from_dir(plugins_dir)
 }
