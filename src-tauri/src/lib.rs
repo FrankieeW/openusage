@@ -143,6 +143,8 @@ pub struct AppState {
     pub plugins: Vec<plugin_engine::manifest::LoadedPlugin>,
     pub app_data_dir: PathBuf,
     pub app_version: String,
+    pub hub_dir: PathBuf,
+    pub hub_registry: hub::registry::RegistryFile,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -581,10 +583,22 @@ pub fn run() {
             let (_, plugins) = plugin_engine::initialize_plugins(&app_data_dir, &resource_dir);
             let known_plugin_ids: Vec<String> =
                 plugins.iter().map(|p| p.manifest.id.clone()).collect();
+
+            let hub_dir = hub::hub_dir(&app_data_dir);
+            let hub_registry = hub::registry::read(&hub_dir).unwrap_or_else(|err| {
+                log::warn!(
+                    "hub registry load failed: {}, starting from default",
+                    err
+                );
+                hub::registry::default_registry()
+            });
+
             app.manage(Mutex::new(AppState {
                 plugins,
                 app_data_dir: app_data_dir.clone(),
                 app_version: app.package_info().version.to_string(),
+                hub_dir,
+                hub_registry,
             }));
 
             local_http_api::init(&app_data_dir, known_plugin_ids);
