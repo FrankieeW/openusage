@@ -44,6 +44,10 @@ fn load_active_plugins_from_dir(plugins_dir: &Path) -> Vec<LoadedPlugin> {
         .collect()
 }
 
+pub fn reload_from_install_dir(plugins_dir: &Path) -> Vec<LoadedPlugin> {
+    load_active_plugins_from_dir(plugins_dir)
+}
+
 fn is_retired_bundled_plugin_id(id: &str) -> bool {
     RETIRED_BUNDLED_PLUGIN_IDS.contains(&id)
 }
