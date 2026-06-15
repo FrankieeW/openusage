@@ -2,6 +2,8 @@
   "name": "openusage.cc",
   "private": true,
   "version": "1.0.0",
+  "author": "Frankie Wang",
+  "description": "AI subscription tracker — Community Collection",
   "type": "module",
   "scripts": {
     "dev": "vite",
