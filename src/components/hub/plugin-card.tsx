@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { useHubStore, pluginLoadingKey } from "@/lib/hub/cache"
 import type { PluginInfo, SkippedPlugin } from "@/lib/hub/types"
-import { AlertCircle, RefreshCw } from "lucide-react"
+import { AlertCircle } from "lucide-react"
 
 interface PluginBrowserProps {
   sourceId: string
@@ -16,7 +16,6 @@ export function PluginBrowser({ sourceId, available, skipped }: PluginBrowserPro
   const loading = useHubStore((s) => s.loading.perSource[sourceId])
   const install = useHubStore((s) => s.install)
   const uninstall = useHubStore((s) => s.uninstall)
-  const refreshSource = useHubStore((s) => s.refreshSource)
 
   if (loading && available.length === 0) {
     return (
@@ -29,20 +28,11 @@ export function PluginBrowser({ sourceId, available, skipped }: PluginBrowserPro
 
   return (
     <div className="space-y-1 pb-3">
-      <div className="flex items-center justify-between px-4 py-1.5">
+      <div className="px-4 py-1.5">
         <span className="text-xs text-muted-foreground">
           {available.length} plugin{available.length === 1 ? "" : "s"}
           {skipped.length > 0 ? `, ${skipped.length} skipped` : ""}
         </span>
-        <Button
-          variant="ghost"
-          size="xs"
-          onClick={() => refreshSource(sourceId)}
-          disabled={loading}
-        >
-          <RefreshCw size={12} />
-          Refresh
-        </Button>
       </div>
 
       {skipped.length > 0 && (
