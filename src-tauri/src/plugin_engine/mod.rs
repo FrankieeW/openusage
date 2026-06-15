@@ -5,11 +5,11 @@ pub mod runtime;
 use manifest::LoadedPlugin;
 use std::path::{Path, PathBuf};
 
-const RETIRED_BUNDLED_PLUGIN_IDS: &[&str] = &["windsurf"];
+const RETIRED_BUNDLED_PLUGIN_IDS: &[&str] = &[];
 
 pub fn initialize_plugins(
     app_data_dir: &Path,
-    resource_dir: &Path,
+    _resource_dir: &Path,
 ) -> (PathBuf, Vec<LoadedPlugin>) {
     if let Some(dev_dir) = find_dev_plugins_dir() {
         if !is_dir_empty(&dev_dir) {
@@ -27,12 +27,9 @@ pub fn initialize_plugins(
         );
     }
 
-    let bundled_dir = resolve_bundled_dir(resource_dir);
-    if bundled_dir.exists() {
-        copy_dir_recursive(&bundled_dir, &install_dir);
-        remove_retired_bundled_plugins(&install_dir);
-    }
-
+    // No bundled copy: upstream plugins are no longer embedded. The Hub is the
+    // supply-side; an empty install_dir here means the user starts with no
+    // plugins and adds a source + installs from it.
     let plugins = load_active_plugins_from_dir(&install_dir);
     (install_dir, plugins)
 }
@@ -66,15 +63,6 @@ fn find_dev_plugins_dir() -> Option<PathBuf> {
     None
 }
 
-fn resolve_bundled_dir(resource_dir: &Path) -> PathBuf {
-    let nested = resource_dir.join("resources/bundled_plugins");
-    if nested.exists() {
-        nested
-    } else {
-        resource_dir.join("bundled_plugins")
-    }
-}
-
 fn is_dir_empty(path: &Path) -> bool {
     match std::fs::read_dir(path) {
         Ok(mut entries) => entries.next().is_none(),
@@ -83,37 +71,6 @@ fn is_dir_empty(path: &Path) -> bool {
             true
         }
     }
-}
-
-fn remove_retired_bundled_plugins(install_dir: &Path) {
-    for id in RETIRED_BUNDLED_PLUGIN_IDS {
-        let plugin_dir = install_dir.join(id);
-        if !plugin_dir.is_dir() || !plugin_dir_has_id(&plugin_dir, id) {
-            continue;
-        }
-
-        if let Err(err) = std::fs::remove_dir_all(&plugin_dir) {
-            log::warn!(
-                "failed to remove retired bundled plugin {}: {}",
-                plugin_dir.display(),
-                err
-            );
-        }
-    }
-}
-
-fn plugin_dir_has_id(plugin_dir: &Path, expected_id: &str) -> bool {
-    let manifest_path = plugin_dir.join("plugin.json");
-    let Ok(text) = std::fs::read_to_string(&manifest_path) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    value
-        .get("id")
-        .and_then(|id| id.as_str())
-        .is_some_and(|id| id == expected_id)
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) {
@@ -264,16 +221,18 @@ mod tests {
 
     #[test]
     #[serial]
-    fn initialize_plugins_removes_retired_windsurf_without_removing_custom_plugins() {
-        let root = TempDir::new("retired");
+    fn initialize_plugins_loads_only_what_is_in_install_dir() {
+        let root = TempDir::new("install-only");
         let _cwd = CurrentDirGuard::enter(root.path());
         let app_data_dir = root.path().join("app-data");
         let install_dir = app_data_dir.join("plugins");
         let resource_dir = root.path().join("resources");
         let bundled_dir = resource_dir.join("bundled_plugins");
 
-        write_plugin(&install_dir, "windsurf", "Windsurf");
+        write_plugin(&install_dir, "claude", "Claude");
         write_plugin(&install_dir, "custom", "Custom");
+        // Anything in bundled_dir must be ignored — upstream no longer embeds
+        // plugins in the bundle.
         write_plugin(&bundled_dir, "devin", "Devin");
 
         let (loaded_dir, plugins) = initialize_plugins(&app_data_dir, &resource_dir);
@@ -283,28 +242,24 @@ mod tests {
             .collect();
 
         assert_eq!(loaded_dir, install_dir);
-        assert!(!loaded_dir.join("windsurf").exists());
+        assert!(loaded_dir.join("claude").exists());
         assert!(loaded_dir.join("custom").exists());
-        assert!(loaded_dir.join("devin").exists());
-        assert_eq!(ids, vec!["custom", "devin"]);
+        assert!(!loaded_dir.join("devin").exists());
+        assert_eq!(ids, vec!["claude", "custom"]);
     }
 
     #[test]
     #[serial]
-    fn initialize_plugins_skips_retired_plugin_even_when_cleanup_does_not_remove_it() {
-        let root = TempDir::new("retired-skip");
+    fn initialize_plugins_with_empty_install_dir_yields_no_plugins() {
+        let root = TempDir::new("empty");
         let _cwd = CurrentDirGuard::enter(root.path());
         let app_data_dir = root.path().join("app-data");
-        let install_dir = app_data_dir.join("plugins");
         let resource_dir = root.path().join("resources");
         fs::create_dir_all(&resource_dir).expect("create resource dir");
 
-        let mismatched_dir = install_dir.join("legacy-name");
-        write_plugin_at(&mismatched_dir, "windsurf", "Windsurf");
+        let (loaded_dir, plugins) = initialize_plugins(&app_data_dir, &resource_dir);
 
-        let (_loaded_dir, plugins) = initialize_plugins(&app_data_dir, &resource_dir);
-
-        assert!(mismatched_dir.exists());
+        assert!(loaded_dir.is_dir());
         assert!(plugins.is_empty());
     }
 }
