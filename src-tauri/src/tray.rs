@@ -249,19 +249,19 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                     #[cfg(target_os = "macos")]
                     {
                         let _ = tray.with_inner_tray_icon(|inner| {
+                            // with_inner_tray_icon runs the closure on the main thread
+                            // (see tauri 2.11.2 src/tray/mod.rs `run_item_main_thread!`),
+                            // so constructing a MainThreadMarker here is sound.
                             let mtm = objc2_foundation::MainThreadMarker::new()
                                 .expect("with_inner_tray_icon closure must run on the main thread");
                             let Some(status) = inner.ns_status_item() else {
                                 return;
                             };
-                            unsafe {
-                                let Some(menu) = status.menu(mtm) else {
-                                    return;
-                                };
-                                let button = status.button(mtm).unwrap();
-                                let _: () =
-                                    msg_send![&button, popUpStatusItemMenu: &*menu];
-                            }
+                            let Some(menu) = status.menu(mtm) else {
+                                return;
+                            };
+                            let button = status.button(mtm).unwrap();
+                            let _: () = unsafe { msg_send![&button, popUpStatusItemMenu: &*menu] };
                         });
                     }
                 }
