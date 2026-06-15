@@ -665,19 +665,38 @@ pub async fn hub_uninstall(
 /// Walk plugins/ and return the directory name whose .openusage-install.json
 /// matches the given plugin_id + source_id.
 fn find_install_dir(plugins_dir: &Path, plugin_id: &str, source_id: &str) -> Option<String> {
-    let entries = std::fs::read_dir(plugins_dir).ok()?;
+    let entries = match std::fs::read_dir(plugins_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            log::warn!("find_install_dir: cannot read {}: {}", plugins_dir.display(), e);
+            return None;
+        }
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
             continue;
         }
-        if let Some(meta) = install::read_install_metadata(plugins_dir, &entry.file_name().to_string_lossy())
-        {
-            if meta.plugin_id == plugin_id && meta.source_id == source_id {
-                return Some(entry.file_name().to_string_lossy().to_string());
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+        match install::read_install_metadata(plugins_dir, &dir_name) {
+            Some(meta) => {
+                log::debug!(
+                    "find_install_dir: dir={} meta.plugin_id={} meta.source_id={}",
+                    dir_name, meta.plugin_id, meta.source_id
+                );
+                if meta.plugin_id == plugin_id && meta.source_id == source_id {
+                    return Some(dir_name);
+                }
+            }
+            None => {
+                log::debug!("find_install_dir: dir={} has no metadata", dir_name);
             }
         }
     }
+    log::warn!(
+        "find_install_dir: no match for plugin_id={} source_id={}",
+        plugin_id, source_id
+    );
     None
 }
 
