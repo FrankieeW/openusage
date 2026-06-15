@@ -3313,7 +3313,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "openusage"
+name = "openusage-cc"
 version = "0.6.27"
 dependencies = [
  "aes-gcm",
@@ -5829,6 +5829,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

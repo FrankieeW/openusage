@@ -6,6 +6,7 @@ mod log_path;
 mod panel;
 mod plugin_engine;
 mod tray;
+mod hub;
 #[cfg(target_os = "macos")]
 mod webkit_config;
 
@@ -142,6 +143,9 @@ pub struct AppState {
     pub plugins: Vec<plugin_engine::manifest::LoadedPlugin>,
     pub app_data_dir: PathBuf,
     pub app_version: String,
+    pub hub_dir: PathBuf,
+    pub hub_registry: hub::registry::RegistryFile,
+    pub plugins_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -453,9 +457,17 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
         locked.plugins.clone()
     };
     log::debug!("list_plugins: {} plugins", plugins.len());
+    plugins_to_meta(&plugins)
+}
 
+/// Build the JS-facing PluginMeta list from the loaded Rust plugins.
+/// Shared by `list_plugins` and `hub::reload_plugins_and_emit` so hot-reload
+/// stays byte-identical to the initial probe.
+pub fn plugins_to_meta(
+    plugins: &[plugin_engine::manifest::LoadedPlugin],
+) -> Vec<PluginMeta> {
     plugins
-        .into_iter()
+        .iter()
         .map(|plugin| {
             // Extract primary candidates: progress lines with primary_order, sorted by order
             let mut candidates: Vec<_> = plugin
@@ -474,10 +486,10 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
                     .map(str::to_string);
 
             PluginMeta {
-                id: plugin.manifest.id,
-                name: plugin.manifest.name,
-                icon_url: plugin.icon_data_url,
-                brand_color: plugin.manifest.brand_color,
+                id: plugin.manifest.id.clone(),
+                name: plugin.manifest.name.clone(),
+                icon_url: plugin.icon_data_url.clone(),
+                brand_color: plugin.manifest.brand_color.clone(),
                 lines: plugin
                     .manifest
                     .lines
@@ -539,7 +551,16 @@ pub fn run() {
             start_probe_batch,
             list_plugins,
             get_log_path,
-            update_global_shortcut
+            update_global_shortcut,
+            hub::hub_list_sources,
+            hub::hub_add_source,
+            hub::hub_remove_source,
+            hub::hub_browse_source,
+            hub::hub_install,
+            hub::hub_uninstall,
+            hub::hub_refresh_source,
+            hub::hub_check_updates,
+            hub::hub_list_local_plugins
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -577,13 +598,33 @@ pub fn run() {
                 redacted_app_data_dir
             );
 
-            let (_, plugins) = plugin_engine::initialize_plugins(&app_data_dir, &resource_dir);
+            let (plugins_dir, plugins) = plugin_engine::initialize_plugins(&app_data_dir, &resource_dir);
             let known_plugin_ids: Vec<String> =
                 plugins.iter().map(|p| p.manifest.id.clone()).collect();
+
+            let hub_dir = hub::hub_dir(&app_data_dir);
+            let mut hub_registry = hub::registry::read(&hub_dir).unwrap_or_else(|err| {
+                log::warn!(
+                    "hub registry load failed: {}, starting from default",
+                    err
+                );
+                hub::registry::default_registry()
+            });
+            // Persist default to disk so sources.json exists before the first
+            // Browse (which triggers auto-clone into cache/).
+            if let Err(err) = hub::registry::write(&hub_dir, &hub_registry) {
+                log::warn!("hub registry write failed (non-fatal): {}", err);
+                // Reset to in-memory default so the UI still shows the upstream source.
+                hub_registry = hub::registry::default_registry();
+            }
+
             app.manage(Mutex::new(AppState {
                 plugins,
                 app_data_dir: app_data_dir.clone(),
                 app_version: app.package_info().version.to_string(),
+                hub_dir,
+                hub_registry,
+                plugins_dir,
             }));
 
             local_http_api::init(&app_data_dir, known_plugin_ids);

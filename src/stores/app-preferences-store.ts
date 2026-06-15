@@ -3,6 +3,7 @@ import {
   DEFAULT_AUTO_UPDATE_INTERVAL,
   DEFAULT_DISPLAY_MODE,
   DEFAULT_GLOBAL_SHORTCUT,
+  DEFAULT_HUB_AUTO_CHECK,
   DEFAULT_MENUBAR_ICON_STYLE,
   DEFAULT_MENUBAR_METRIC,
   DEFAULT_RESET_TIMER_DISPLAY_MODE,
@@ -29,6 +30,7 @@ type AppPreferencesStore = {
   startOnLogin: boolean
   menubarIconStyle: MenubarIconStyle
   menubarMetric: MenubarMetric
+  hubAutoCheck: boolean
   setAutoUpdateInterval: (value: AutoUpdateIntervalMinutes) => void
   setThemeMode: (value: ThemeMode) => void
   setDisplayMode: (value: DisplayMode) => void
@@ -38,6 +40,7 @@ type AppPreferencesStore = {
   setStartOnLogin: (value: boolean) => void
   setMenubarIconStyle: (value: MenubarIconStyle) => void
   setMenubarMetric: (value: MenubarMetric) => void
+  setHubAutoCheck: (value: boolean) => void
   resetState: () => void
 }
 
@@ -51,6 +54,7 @@ const initialState = {
   startOnLogin: DEFAULT_START_ON_LOGIN,
   menubarIconStyle: DEFAULT_MENUBAR_ICON_STYLE,
   menubarMetric: DEFAULT_MENUBAR_METRIC,
+  hubAutoCheck: DEFAULT_HUB_AUTO_CHECK,
 }
 
 export const useAppPreferencesStore = create<AppPreferencesStore>((set) => ({
@@ -64,5 +68,6 @@ export const useAppPreferencesStore = create<AppPreferencesStore>((set) => ({
   setStartOnLogin: (value) => set({ startOnLogin: value }),
   setMenubarIconStyle: (value) => set({ menubarIconStyle: value }),
   setMenubarMetric: (value) => set({ menubarMetric: value }),
+  setHubAutoCheck: (value) => set({ hubAutoCheck: value }),
   resetState: () => set(initialState),
 }))

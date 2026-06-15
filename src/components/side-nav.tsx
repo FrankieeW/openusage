@@ -1,5 +1,5 @@
 import { useCallback } from "react"
-import { CircleHelp, Settings } from "lucide-react"
+import { CircleHelp, Package, Settings } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { invoke } from "@tauri-apps/api/core"
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu"
@@ -250,11 +250,21 @@ export function SideNav({
         </DndContext>
       </div>
 
+      {/* Hub */}
+      <NavButton
+        isActive={activeView === "hub"}
+        onClick={() => onViewChange("hub")}
+        aria-label="Collection"
+        data-testid="nav-hub"
+      >
+        <Package className="size-6" />
+      </NavButton>
+
       {/* Help */}
       <NavButton
         isActive={false}
         onClick={() => {
-          openUrl("https://github.com/robinebers/openusage/issues").catch(console.error)
+          openUrl("https://github.com/FrankieeW/openusage/issues").catch(console.error)
           invoke("hide_panel").catch(console.error)
         }}
         aria-label="Help"

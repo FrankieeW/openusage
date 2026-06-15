@@ -2,6 +2,7 @@ import { useShallow } from "zustand/react/shallow"
 import { OverviewPage } from "@/pages/overview"
 import { ProviderDetailPage } from "@/pages/provider-detail"
 import { SettingsPage } from "@/pages/settings"
+import { HubPage } from "@/pages/hub-page"
 import type { DisplayPluginState } from "@/hooks/app/use-app-plugin-views"
 import type { SettingsPluginState } from "@/hooks/app/use-settings-plugin-list"
 import type { TraySettingsPreview } from "@/hooks/app/use-tray-icon"
@@ -103,6 +104,10 @@ export function AppContent({
         onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
       />
     )
+  }
+
+  if (activeView === "hub") {
+    return <HubPage />
   }
 
   if (activeView === "settings") {
