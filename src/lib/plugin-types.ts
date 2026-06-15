@@ -50,10 +50,10 @@ export type PluginMeta = {
   brandColor?: string
   lines: ManifestLine[]
   links?: PluginLink[]
-  /** Ordered list of primary metric candidates. Frontend picks first available. */
   primaryCandidates: string[]
-  /** Label of the line marked `"period": "weekly"`, if the provider has one. */
   weeklyCandidate?: string
+  /** Source label from Hub metadata, e.g. "Frankie's". null for unmanaged plugins. */
+  sourceLabel?: string | null
 }
 
 export type PluginDisplayState = {

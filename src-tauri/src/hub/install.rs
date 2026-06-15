@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 pub struct InstallMetadata {
     pub source_id: String,
     pub source_url: String,
+    #[serde(default)]
+    pub source_label: String,
     pub plugin_id: String,
     pub installed_version: String,
     pub installed_at: i64,
@@ -271,6 +273,7 @@ mod sweep_tests {
         let m = InstallMetadata {
             source_id: source_id.into(),
             source_url: "https://github.com/foo/bar".into(),
+            source_label: "".into(),
             plugin_id: plugin_id.into(),
             installed_version: "0.6.27".into(),
             installed_at: 0,
@@ -441,6 +444,7 @@ mod tests {
         let m = InstallMetadata {
             source_id: "src-1".into(),
             source_url: "https://github.com/foo/bar".into(),
+            source_label: "".into(),
             plugin_id: "claude".into(),
             installed_version: "0.6.27".into(),
             installed_at: 1234567890,
@@ -499,6 +503,7 @@ mod tests {
         let m = InstallMetadata {
             source_id: "src-existing".into(),
             source_url: "https://github.com/foo/bar".into(),
+            source_label: "".into(),
             plugin_id: "claude".into(),
             installed_version: "0.6.27".into(),
             installed_at: 0,
@@ -514,6 +519,7 @@ mod tests {
         let m = InstallMetadata {
             source_id: "src-existing".into(),
             source_url: "https://github.com/foo/bar".into(),
+            source_label: "".into(),
             plugin_id: "claude".into(),
             installed_version: "0.6.27".into(),
             installed_at: 0,

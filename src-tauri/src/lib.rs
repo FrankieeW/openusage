@@ -157,12 +157,11 @@ pub struct PluginMeta {
     pub brand_color: Option<String>,
     pub lines: Vec<ManifestLineDto>,
     pub links: Vec<PluginLinkDto>,
-    /// Ordered list of primary metric candidates (sorted by primaryOrder).
-    /// Frontend picks the first one that exists in runtime data.
     pub primary_candidates: Vec<String>,
-    /// Label of the progress line marked `"period": "weekly"`, if any.
-    /// Drives the menubar weekly-metric preference.
     pub weekly_candidate: Option<String>,
+    /// Human-readable source label (e.g. "Frankie's") from Hub metadata.
+    /// None for unmanaged/local plugins.
+    pub source_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -452,19 +451,40 @@ fn update_global_shortcut(
 
 #[tauri::command]
 fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
-    let plugins = {
+    let (plugins, plugins_dir) = {
         let locked = state.lock().expect("plugin state poisoned");
-        locked.plugins.clone()
+        (locked.plugins.clone(), locked.plugins_dir.clone())
     };
     log::debug!("list_plugins: {} plugins", plugins.len());
-    plugins_to_meta(&plugins)
+    plugins_to_meta(&plugins, &plugins_dir)
 }
 
 /// Build the JS-facing PluginMeta list from the loaded Rust plugins.
 /// Shared by `list_plugins` and `hub::reload_plugins_and_emit` so hot-reload
 /// stays byte-identical to the initial probe.
+/// Walk plugins/ and return source_label for each installed plugin dir
+/// whose .openusage-install.json metadata has a non-empty source_label.
+fn read_source_label_map(plugins_dir: &std::path::Path) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let Ok(entries) = std::fs::read_dir(plugins_dir) else { return map };
+    for entry in entries.flatten() {
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+        if let Some(meta) = hub::install::read_install_metadata(plugins_dir, &dir_name) {
+            if !meta.source_label.is_empty() {
+                map.insert(meta.plugin_id, meta.source_label);
+            }
+        }
+    }
+    map
+}
+
+fn read_source_label(plugins_dir: &std::path::Path, plugin_id: &str) -> Option<String> {
+    read_source_label_map(plugins_dir).remove(plugin_id)
+}
+
 pub fn plugins_to_meta(
     plugins: &[plugin_engine::manifest::LoadedPlugin],
+    plugins_dir: &std::path::Path,
 ) -> Vec<PluginMeta> {
     plugins
         .iter()
@@ -511,6 +531,7 @@ pub fn plugins_to_meta(
                     .collect(),
                 primary_candidates,
                 weekly_candidate,
+                source_label: read_source_label(plugins_dir, &plugin.manifest.id),
             }
         })
         .collect()

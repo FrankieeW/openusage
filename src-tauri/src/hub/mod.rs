@@ -400,7 +400,7 @@ fn reload_plugins_and_emit(app: &AppHandle, state: &State<'_, Mutex<crate::AppSt
         s.plugins_dir.clone()
     };
     let fresh = crate::plugin_engine::reload_from_install_dir(&plugins_dir);
-    let meta = crate::plugins_to_meta(&fresh);
+    let meta = crate::plugins_to_meta(&fresh, &plugins_dir);
     log::info!(
         "reload_plugins_and_emit: {} plugins loaded, emitting plugins-changed",
         meta.len()
@@ -617,6 +617,7 @@ pub async fn hub_install(
     let metadata = install::InstallMetadata {
         source_id: source.id.clone(),
         source_url: source.url.clone(),
+        source_label: source.label.clone(),
         plugin_id: plugin_id.clone(),
         installed_version: version,
         installed_at: now_millis(),
