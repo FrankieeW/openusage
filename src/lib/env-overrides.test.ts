@@ -11,67 +11,117 @@ vi.mock("@tauri-apps/plugin-store", () => ({
     async set<T>(key: string, value: T): Promise<void> {
       storeState.set(key, value)
     }
+    async delete(key: string): Promise<void> {
+      storeState.delete(key)
+    }
     async save(): Promise<void> {}
   },
 }))
 
 import {
-  loadEnvOverrides,
-  saveEnvOverrides,
-  normalizeEnvOverrides,
-  type EnvOverride,
+  parseValueInput,
+  loadEnvGroups,
+  saveEnvGroups,
+  loadActiveGroupIds,
+  saveActiveGroupIds,
+  normalizeGroups,
+  type EnvGroup,
 } from "@/lib/env-overrides"
 
-describe("env-overrides", () => {
-  beforeEach(() => {
-    storeState.clear()
+describe("parseValueInput", () => {
+  it("treats plain text as a literal", () => {
+    expect(parseValueInput("api")).toEqual({ kind: "literal", value: "api" })
   })
-
-  it("returns [] when nothing stored", async () => {
-    await expect(loadEnvOverrides()).resolves.toEqual([])
+  it("treats $B as a reference", () => {
+    expect(parseValueInput("$B")).toEqual({ kind: "reference", value: "B" })
   })
-
-  it("round-trips saved overrides", async () => {
-    const overrides: EnvOverride[] = [
-      { name: "A", kind: "literal", value: "api" },
-      { name: "C", kind: "reference", value: "D" },
-    ]
-    await saveEnvOverrides(overrides)
-    await expect(loadEnvOverrides()).resolves.toEqual(overrides)
+  it("treats $$B as a literal starting with $", () => {
+    expect(parseValueInput("$$B")).toEqual({ kind: "literal", value: "$B" })
   })
-
-  it("drops entries with invalid names", () => {
-    const result = normalizeEnvOverrides([
-      { name: "9bad", kind: "literal", value: "x" },
-      { name: "has space", kind: "literal", value: "x" },
-      { name: "GOOD_1", kind: "literal", value: "x" },
-    ])
-    expect(result).toEqual([{ name: "GOOD_1", kind: "literal", value: "x" }])
+  it("treats $$$B as a literal $$B", () => {
+    expect(parseValueInput("$$$B")).toEqual({ kind: "literal", value: "$$B" })
   })
+  it("treats a single $ as a literal (incomplete reference)", () => {
+    expect(parseValueInput("$")).toEqual({ kind: "literal", value: "$" })
+  })
+  it("treats empty as literal empty (callers drop empty rows)", () => {
+    expect(parseValueInput("")).toEqual({ kind: "literal", value: "" })
+  })
+})
 
-  it("dedupes by name keeping the last definition, preserving order", () => {
-    const result = normalizeEnvOverrides([
-      { name: "A", kind: "literal", value: "first" },
-      { name: "B", kind: "reference", value: "X" },
-      { name: "A", kind: "literal", value: "second" },
+describe("normalizeGroups", () => {
+  it("returns [] for non-array input", () => {
+    expect(normalizeGroups(null)).toEqual([])
+  })
+  it("keeps groups with valid names, drops invalid", () => {
+    const result = normalizeGroups([
+      { id: "g1", name: "Dev", enabled: true, overrides: [] },
+      { id: "g2", name: "", enabled: true, overrides: [] },
+      { id: "g3", name: "Prod", enabled: false, overrides: [] },
     ])
     expect(result).toEqual([
-      { name: "B", kind: "reference", value: "X" },
-      { name: "A", kind: "literal", value: "second" },
+      { id: "g1", name: "Dev", enabled: true, overrides: [] },
+      { id: "g3", name: "Prod", enabled: false, overrides: [] },
     ])
   })
-
-  it("drops entries with an unknown kind or empty value", () => {
-    const result = normalizeEnvOverrides([
-      { name: "A", kind: "literal", value: "" },
-      { name: "B", kind: "bogus" as unknown as "literal", value: "x" },
-      { name: "C", kind: "reference", value: "T" },
+  it("generates an id when missing", () => {
+    const result = normalizeGroups([
+      { name: "Dev", enabled: true, overrides: [] },
     ])
-    expect(result).toEqual([{ name: "C", kind: "reference", value: "T" }])
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toEqual(expect.any(String))
+    expect(result[0].id.length).toBeGreaterThan(0)
   })
+  it("normalizes each override: name, non-empty value, dedupes by name", () => {
+    const result = normalizeGroups([
+      {
+        id: "g1",
+        name: "Dev",
+        enabled: true,
+        overrides: [
+          { name: "9bad", value: "x" },
+          { name: "B", value: "" },
+          { name: "A", value: "first" },
+          { name: "A", value: "second" },
+        ],
+      },
+    ])
+    expect(result[0].overrides).toEqual([
+      { name: "A", value: "second" },
+    ])
+  })
+})
 
-  it("ignores non-array stored values", async () => {
-    storeState.set("envOverrides", { not: "an array" })
-    await expect(loadEnvOverrides()).resolves.toEqual([])
+describe("persistence", () => {
+  beforeEach(() => { storeState.clear() })
+
+  it("loadEnvGroups returns [] by default", async () => {
+    await expect(loadEnvGroups()).resolves.toEqual([])
+  })
+  it("saveEnvGroups round-trips", async () => {
+    const groups: EnvGroup[] = [{ id: "g1", name: "Dev", enabled: true, overrides: [{ name: "A", value: "api" }] }]
+    await saveEnvGroups(groups)
+    await expect(loadEnvGroups()).resolves.toEqual(groups)
+  })
+  it("loadActiveGroupIds returns [] by default", async () => {
+    await expect(loadActiveGroupIds()).resolves.toEqual([])
+  })
+  it("saveActiveGroupIds round-trips", async () => {
+    const ids = ["g1", "g3"]
+    await saveActiveGroupIds(ids)
+    await expect(loadActiveGroupIds()).resolves.toEqual(ids)
+  })
+  it("loadActiveGroupIds filters to existing group ids", async () => {
+    storeState.set("envGroups", [{ id: "g1", name: "Dev", enabled: true, overrides: [] }])
+    storeState.set("envActiveGroupIds", ["g1", "ghost"])
+    await expect(loadActiveGroupIds()).resolves.toEqual(["g1"])
+  })
+  it("loadEnvGroups migrates legacy envOverrides into a Default group", async () => {
+    storeState.set("envOverrides", [{ name: "A", kind: "literal", value: "api" }])
+    const groups = await loadEnvGroups()
+    expect(groups).toEqual([
+      { id: expect.any(String), name: "Default", enabled: true, overrides: [{ name: "A", value: "api" }] },
+    ])
+    expect(storeState.has("envOverrides")).toBe(false)
   })
 })
