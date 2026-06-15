@@ -1,11 +1,16 @@
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::path::BaseDirectory;
-use tauri::tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_nspanel::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_store::StoreExt;
+
+#[cfg(target_os = "macos")]
+use objc2::msg_send;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::NSMenu;
 
 use crate::log_path;
 use crate::panel::{get_or_init_panel, position_panel_at_tray_icon, show_panel};
