@@ -1,5 +1,5 @@
 import { useCallback } from "react"
-import { CircleHelp, Package, Settings } from "lucide-react"
+import { Braces, CircleHelp, Package, Settings } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { invoke } from "@tauri-apps/api/core"
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu"
@@ -258,6 +258,16 @@ export function SideNav({
         data-testid="nav-hub"
       >
         <Package className="size-6" />
+      </NavButton>
+
+      {/* Env */}
+      <NavButton
+        isActive={activeView === "env"}
+        onClick={() => onViewChange("env")}
+        aria-label="Environment Variables"
+        data-testid="nav-env"
+      >
+        <Braces className="size-6" />
       </NavButton>
 
       {/* Help */}

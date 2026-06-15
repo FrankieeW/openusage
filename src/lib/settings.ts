@@ -26,7 +26,7 @@ export type MenubarMetric = "default" | "weekly";
 
 export type GlobalShortcut = string | null;
 
-const SETTINGS_STORE_PATH = "settings.json";
+export const SETTINGS_STORE_PATH = "settings.json";
 const PLUGIN_SETTINGS_KEY = "plugins";
 const AUTO_UPDATE_SETTINGS_KEY = "autoUpdateInterval";
 const THEME_MODE_KEY = "themeMode";
@@ -100,7 +100,8 @@ export const TIME_FORMAT_OPTIONS: { value: TimeFormatMode; label: string }[] = [
   { value: "24h", label: "24-hour" },
 ];
 
-const store = new LazyStore(SETTINGS_STORE_PATH);
+export const settingsStore = new LazyStore(SETTINGS_STORE_PATH);
+const store = settingsStore;
 
 const DEFAULT_ENABLED_PLUGINS = new Set(["claude", "codex", "cursor"]);
 

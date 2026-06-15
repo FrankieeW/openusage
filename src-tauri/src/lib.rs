@@ -50,6 +50,31 @@ fn should_track_daily_active(last_tracked_day: Option<&str>, today: &str) -> boo
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvOverrideDto {
+    name: String,
+    kind: String,
+    value: String,
+}
+
+fn map_env_overrides(dtos: Vec<EnvOverrideDto>) -> Vec<plugin_engine::host_api::EnvOverrideInput> {
+    use plugin_engine::host_api::{EnvOverrideInput, EnvOverrideKind};
+    dtos.into_iter()
+        .filter_map(|dto| {
+            let kind = match dto.kind.as_str() {
+                "literal" => EnvOverrideKind::Literal,
+                "reference" => EnvOverrideKind::Reference,
+                other => {
+                    log::warn!("Ignoring env override with unknown kind: {}", other);
+                    return None;
+                }
+            };
+            Some(EnvOverrideInput { name: dto.name, kind, value: dto.value })
+        })
+        .collect()
+}
+
 /// Read the persisted `unsafeAllowAllEnv` flag and sync it into the plugin
 /// engine so the setting takes effect even before the frontend boots.
 fn apply_unsafe_env_setting(app_handle: &tauri::AppHandle) {
@@ -66,6 +91,26 @@ fn apply_unsafe_env_setting(app_handle: &tauri::AppHandle) {
         }
     };
     plugin_engine::host_api::set_allow_all_env(enabled);
+}
+
+/// Read persisted `envOverrides` from settings and sync them into the plugin
+/// engine so overrides take effect even before the frontend boots.
+fn apply_env_overrides(app_handle: &tauri::AppHandle) {
+    use tauri_plugin_store::StoreExt;
+
+    let raw = match app_handle.store("settings.json") {
+        Ok(store) => store.get("envOverrides"),
+        Err(error) => {
+            log::warn!("Failed to read envOverrides from settings: {}", error);
+            return;
+        }
+    };
+
+    let Some(value) = raw else { return };
+    match serde_json::from_value::<Vec<EnvOverrideDto>>(value) {
+        Ok(dtos) => plugin_engine::host_api::set_env_overrides(map_env_overrides(dtos)),
+        Err(error) => log::warn!("Failed to parse envOverrides from settings: {}", error),
+    }
 }
 
 #[cfg(desktop)]
@@ -236,6 +281,11 @@ fn hide_panel(app_handle: tauri::AppHandle) {
 #[tauri::command]
 fn set_allow_all_env(enabled: bool) {
     plugin_engine::host_api::set_allow_all_env(enabled);
+}
+
+#[tauri::command]
+fn set_env_overrides(overrides: Vec<EnvOverrideDto>) {
+    plugin_engine::host_api::set_env_overrides(map_env_overrides(overrides));
 }
 
 #[tauri::command]
@@ -595,6 +645,7 @@ pub fn run() {
             hide_panel,
             open_devtools,
             set_allow_all_env,
+            set_env_overrides,
             start_probe_batch,
             list_plugins,
             get_log_path,
@@ -628,6 +679,7 @@ pub fn run() {
             let _proxy = config::get_resolved_proxy();
 
             apply_unsafe_env_setting(app.handle());
+            apply_env_overrides(app.handle());
 
             track_daily_active_if_needed(app.handle());
             #[cfg(desktop)]

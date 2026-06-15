@@ -49,6 +49,78 @@ pub fn set_allow_all_env(enabled: bool) {
 fn allow_all_env() -> bool {
     ALLOW_ALL_ENV.load(Ordering::Relaxed)
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnvOverrideKind {
+    Literal,
+    Reference,
+}
+
+#[derive(Clone, Debug)]
+pub struct EnvOverride {
+    pub kind: EnvOverrideKind,
+    pub value: String,
+}
+
+// User-defined env overrides, managed from the Env page and synced via the
+// `set_env_overrides` Tauri command. Overrides take precedence over the real
+// environment and bypass WHITELISTED_ENV_VARS for the names they define.
+static ENV_OVERRIDES: OnceLock<Mutex<HashMap<String, EnvOverride>>> = OnceLock::new();
+
+fn env_overrides() -> &'static Mutex<HashMap<String, EnvOverride>> {
+    ENV_OVERRIDES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// One entry as received from the frontend over IPC.
+pub struct EnvOverrideInput {
+    pub name: String,
+    pub kind: EnvOverrideKind,
+    pub value: String,
+}
+
+/// Replace the entire override table. Called from the Tauri command and at
+/// startup when reading persisted settings.
+pub fn set_env_overrides(inputs: Vec<EnvOverrideInput>) {
+    let mut map = HashMap::with_capacity(inputs.len());
+    for input in inputs {
+        map.insert(
+            input.name,
+            EnvOverride { kind: input.kind, value: input.value },
+        );
+    }
+    let mut guard = env_overrides().lock().unwrap_or_else(|poisoned| {
+        log::error!("[env_overrides] mutex poisoned, recovering");
+        poisoned.into_inner()
+    });
+    *guard = map;
+}
+
+/// Pure resolution used by the plugin `env.get` host function. `resolve` is the
+/// real-environment lookup (injected so it can be stubbed in tests).
+fn resolve_env_for_plugin<F>(
+    name: &str,
+    allow_all: bool,
+    overrides: &HashMap<String, EnvOverride>,
+    resolve: F,
+) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    if let Some(override_entry) = overrides.get(name) {
+        return match override_entry.kind {
+            EnvOverrideKind::Literal => Some(override_entry.value.clone()),
+            // Reference resolves its target from the REAL environment only — it
+            // does not chain into another override.
+            EnvOverrideKind::Reference => resolve(&override_entry.value),
+        };
+    }
+
+    if !allow_all && !WHITELISTED_ENV_VARS.contains(&name) {
+        return None;
+    }
+    resolve(name)
+}
+
 const MIN_BLOCKING_TIMEOUT: Duration = Duration::from_millis(1);
 
 #[derive(Clone, Copy, Debug)]
@@ -815,11 +887,8 @@ fn inject_env<'js>(ctx: &Ctx<'js>, host: &Object<'js>, _plugin_id: &str) -> rqui
     env_obj.set(
         "get",
         Function::new(ctx.clone(), move |name: String| -> Option<String> {
-            if !allow_all_env() && !WHITELISTED_ENV_VARS.contains(&name.as_str()) {
-                return None;
-            }
-
-            resolve_env_value(&name)
+            let overrides = env_overrides().lock().ok()?;
+            resolve_env_for_plugin(&name, allow_all_env(), &overrides, resolve_env_value)
         })?,
     )?;
     host.set("env", env_obj)?;
@@ -4620,5 +4689,50 @@ wait
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn override_literal_is_returned_and_bypasses_whitelist() {
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "NOT_WHITELISTED".to_string(),
+            EnvOverride { kind: EnvOverrideKind::Literal, value: "api".to_string() },
+        );
+        let value = resolve_env_for_plugin(
+            "NOT_WHITELISTED",
+            false,
+            &overrides,
+            |_name| panic!("resolver must not run for a literal"),
+        );
+        assert_eq!(value.as_deref(), Some("api"));
+    }
+
+    #[test]
+    fn override_reference_resolves_target_and_bypasses_whitelist() {
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "A".to_string(),
+            EnvOverride { kind: EnvOverrideKind::Reference, value: "B".to_string() },
+        );
+        let value = resolve_env_for_plugin("A", false, &overrides, |name| {
+            if name == "B" { Some("b-value".to_string()) } else { None }
+        });
+        assert_eq!(value.as_deref(), Some("b-value"));
+    }
+
+    #[test]
+    fn miss_falls_back_to_whitelist_gate() {
+        let overrides: HashMap<String, EnvOverride> = HashMap::new();
+        // Not whitelisted, allow_all=false -> blocked, resolver never runs.
+        let blocked = resolve_env_for_plugin("RANDOM_SECRET", false, &overrides, |_| {
+            Some("leaked".to_string())
+        });
+        assert_eq!(blocked, None);
+
+        // Whitelisted name -> resolver runs.
+        let allowed = resolve_env_for_plugin("CODEX_HOME", false, &overrides, |name| {
+            if name == "CODEX_HOME" { Some("/codex".to_string()) } else { None }
+        });
+        assert_eq!(allowed.as_deref(), Some("/codex"));
     }
 }
