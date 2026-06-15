@@ -98,11 +98,12 @@ jobs:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_OPENUSAGECC }}
         run: |
           TAG="${RELEASE_TAG#v}"
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/FrankieeW/homebrew-openusage.git" tap
+          git clone "https://github.com/FrankieeW/homebrew-openusage.git" tap
           cd tap
           sed -i '' "s/version \".*\"/version \"${TAG}\"/" Casks/openusage-cc.rb
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${TAP_TOKEN}@github.com/FrankieeW/homebrew-openusage.git"
           git add Casks/openusage-cc.rb
           git commit -m "openusage-cc: bump to ${TAG}" || true
           git push origin main
