@@ -601,13 +601,20 @@ pub fn run() {
                 plugins.iter().map(|p| p.manifest.id.clone()).collect();
 
             let hub_dir = hub::hub_dir(&app_data_dir);
-            let hub_registry = hub::registry::read(&hub_dir).unwrap_or_else(|err| {
+            let mut hub_registry = hub::registry::read(&hub_dir).unwrap_or_else(|err| {
                 log::warn!(
                     "hub registry load failed: {}, starting from default",
                     err
                 );
                 hub::registry::default_registry()
             });
+            // Persist default to disk so sources.json exists before the first
+            // Browse (which triggers auto-clone into cache/).
+            if let Err(err) = hub::registry::write(&hub_dir, &hub_registry) {
+                log::warn!("hub registry write failed (non-fatal): {}", err);
+                // Reset to in-memory default so the UI still shows the upstream source.
+                hub_registry = hub::registry::default_registry();
+            }
 
             app.manage(Mutex::new(AppState {
                 plugins,

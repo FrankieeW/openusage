@@ -501,6 +501,18 @@ pub async fn hub_browse_source(
     };
 
     let cache_path = cache_dir_for(&hub_dir, &source_id);
+    if !cache_path.exists() {
+        match source.kind {
+            SourceKind::Github | SourceKind::GenericGit => {
+                git_ops::clone(&source.url, &cache_path).await?;
+            }
+            SourceKind::LocalPath => {
+                return Err(HubError::not_found(
+                    "local source path not found; re-add the source",
+                ));
+            }
+        }
+    }
     let installed = build_installed_lookup(&plugins_dir);
     let (available, skipped) =
         discover_cache_plugins(&cache_path, &source_id, &plugins_dir, &installed);
