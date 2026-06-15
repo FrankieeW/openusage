@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::hub::source::SourceKind;
 
 pub const CURRENT_VERSION: u32 = 1;
-pub const DEFAULT_HUB_URL: &str = "https://github.com/FrankieeW/openusage-plugin-hub";
+pub const DEFAULT_HUB_URL: &str = "https://github.com/FrankieeW/openusage-collection";
 pub const DEFAULT_HUB_LABEL: &str = "Frankie's";
 pub const DEFAULT_HUB_ID: &str = "default";
 

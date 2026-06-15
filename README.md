@@ -19,7 +19,7 @@ AI subscription tracker for macOS. See usage at a glance from your menu bar. Com
 
 ## Supported Providers
 
-[17 providers](https://github.com/FrankieeW/openusage-plugin-hub) in the default collection — Claude, Codex, Copilot, Cursor, Devin, Grok, MiniMax, and more. Want more? Add any source that follows the [plugin schema](https://github.com/FrankieeW/openusage-plugin-hub#plugin-schema).
+[17 providers](https://github.com/FrankieeW/openusage-collection) in the default collection — Claude, Codex, Copilot, Cursor, Devin, Grok, MiniMax, and more. Want more? Add any source that follows the [plugin schema](https://github.com/FrankieeW/openusage-collection#plugin-schema).
 
 ## License
 
