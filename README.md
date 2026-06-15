@@ -23,13 +23,11 @@ Or [download the latest release](https://github.com/FrankieeW/openusage/releases
 
 Looking for more? See [recommended sources](docs/recommended-sources.md) for community forks that add extra providers.
 
-![Settings panel](docs/settings-1.0.2.png)
+![App preview](docs/preview-1.0.2.png)
 
 ## Environment Variables
 
 Map a name to a literal value, or to another variable from your shell environment. Define groups of overrides as cards, and only active cards are applied.
-
-![Env page](docs/env-page-rich-1.0.1.png)
 
 See the [Env overrides guide](docs/env-overrides.md) for the full syntax (`$B` references, `$$` literal-escape, conflict behavior).
 
