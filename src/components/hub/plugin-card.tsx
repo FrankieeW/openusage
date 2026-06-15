@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { useHubStore, pluginLoadingKey } from "@/lib/hub/cache"
 import type { PluginInfo, SkippedPlugin } from "@/lib/hub/types"
-import { AlertCircle, RefreshCw, Unplug } from "lucide-react"
+import { AlertCircle, RefreshCw } from "lucide-react"
 
 interface PluginBrowserProps {
   sourceId: string
@@ -130,12 +130,7 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
           {plugin.updateAvailable && (
             <span className="text-xs text-blue-600">↑ {plugin.installedVersion}</span>
           )}
-          {plugin.unmanaged && (
-            <span className="text-xs text-amber-600">
-              <Unplug size={12} className="inline" /> Managed outside Hub
-            </span>
-          )}
-        </div>
+                  </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {!plugin.installed && (
