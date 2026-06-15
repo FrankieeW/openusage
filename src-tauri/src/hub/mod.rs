@@ -272,7 +272,13 @@ pub fn discover_cache_plugins(
 
         let (installed_flag, installed_source_id, installed_version, unmanaged) =
             match installed.get(&id) {
-                Some(info) => (true, Some(info.source_id.clone()), Some(info.version.clone()), false),
+                // Installed from THIS source — show as installed with version info.
+                Some(info) if info.source_id == source_id => {
+                    (true, Some(info.source_id.clone()), Some(info.version.clone()), false)
+                }
+                // Installed from a DIFFERENT source — multi-source model: don't show as
+                // installed here, and don't show as unmanaged (it's managed elsewhere).
+                Some(_) => (false, None, None, false),
                 None => {
                     if plugins_dir.join(&id).is_dir() {
                         (true, None, None, true)
@@ -969,6 +975,41 @@ mod tests {
         assert_eq!(claude.available_version, "0.7.0");
         assert!(claude.update_available);
         assert!(!claude.unmanaged);
+    }
+
+    #[test]
+    fn discover_does_not_mark_installed_when_id_exists_in_another_source() {
+        // Multi-source model: plugin id "claude" is installed from src-1, but we are
+        // browsing src-2. The entry under src-2 must NOT show as installed or unmanaged.
+        let cache = tempdir("cache-multisource");
+        write_fake_plugin(&cache, "claude", "0.7.0");
+        let plugins = tempdir("plugins-multisource");
+        let installed_dir = plugins.join("claude");
+        fs::create_dir_all(&installed_dir).unwrap();
+        fs::write(
+            installed_dir.join("plugin.json"),
+            r##"{"schemaVersion":1,"id":"claude","name":"Claude","version":"0.6.27","entry":"plugin.js","icon":"icon.svg","brandColor":"#000000","lines":[]}"##,
+        )
+        .unwrap();
+        // Simulate "installed from src-1" via the lookup map directly. The metadata
+        // file format is verified by other tests; we just need the in-memory lookup.
+        let mut lookup = InstalledLookup::new();
+        lookup.insert(
+            "claude".to_string(),
+            InstalledLookupEntry {
+                source_id: "src-1".to_string(),
+                source_url: "https://github.com/example/a".to_string(),
+                version: "0.6.27".to_string(),
+            },
+        );
+        // Browse the OTHER source (src-2). Same id, different source.
+        let (available, _skipped) = discover_cache_plugins(&cache, "src-2", &plugins, &lookup);
+        let claude = available.iter().find(|p| p.id == "claude").unwrap();
+        assert!(!claude.installed, "must not show as installed from a different source");
+        assert!(!claude.unmanaged, "must not show as unmanaged (it's managed by src-1)");
+        assert!(claude.installed_source_id.is_none());
+        assert!(claude.installed_version.is_none());
+        assert!(!claude.update_available);
     }
 
     #[test]
