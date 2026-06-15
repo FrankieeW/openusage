@@ -81,41 +81,43 @@ export function EnvPage() {
               data-testid={`env-group-${group.id}`}
               className="rounded-md border bg-card p-3 space-y-2"
             >
-              <header className="flex items-center gap-2">
+              <header className="space-y-2">
                 <input
                   data-testid={`env-group-name-${group.id}`}
                   aria-label="Group name"
-                  className={`${inputClass} flex-1`}
+                  className={`${inputClass} w-full`}
                   value={group.name}
                   onChange={(e) => updateGroup(group.id, { name: e.target.value })}
                 />
-                <label className="flex items-center gap-1 text-sm">
-                  <input
-                    type="checkbox"
-                    data-testid={`env-group-enabled-${group.id}`}
-                    checked={isActive}
-                    onChange={(e) => toggleGroupActive(group.id, e.target.checked)}
-                  />
-                  Active
-                </label>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Delete group"
-                  data-testid={`env-group-delete-${group.id}`}
-                  onClick={() => removeGroup(group.id)}
-                >
-                  <Trash2 size={14} />
-                </Button>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-1 text-sm">
+                    <input
+                      type="checkbox"
+                      data-testid={`env-group-enabled-${group.id}`}
+                      checked={isActive}
+                      onChange={(e) => toggleGroupActive(group.id, e.target.checked)}
+                    />
+                    Active
+                  </label>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label="Delete group"
+                    data-testid={`env-group-delete-${group.id}`}
+                    onClick={() => removeGroup(group.id)}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
               </header>
 
               <div className="space-y-2">
                 {group.overrides.map((entry, index) => (
-                  <div key={index} className="flex items-center gap-2">
+                  <div key={index} className="relative pr-9">
                     <input
                       data-testid={`env-row-name-${index}`}
                       aria-label="Variable name"
-                      className={`${inputClass} w-40`}
+                      className={`${inputClass} w-full`}
                       placeholder="NAME"
                       value={entry.name}
                       onChange={(e) => updateOverride(group.id, index, { name: e.target.value })}
@@ -123,20 +125,22 @@ export function EnvPage() {
                     <input
                       data-testid={`env-row-value-${index}`}
                       aria-label="Variable value"
-                      className={`${inputClass} flex-1`}
+                      className={`${inputClass} w-full mt-1`}
                       placeholder="value or $OTHER"
                       value={entry.value}
                       onChange={(e) => updateOverride(group.id, index, { value: e.target.value })}
                     />
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      aria-label="Remove variable"
-                      data-testid={`env-row-delete-${index}`}
-                      onClick={() => removeOverride(group.id, index)}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
+                    <div className="absolute right-0 top-0">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Remove variable"
+                        data-testid={`env-row-delete-${index}`}
+                        onClick={() => removeOverride(group.id, index)}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
