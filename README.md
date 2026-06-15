@@ -23,6 +23,8 @@ Or [download the latest release](https://github.com/FrankieeW/openusage/releases
 
 Looking for more? See [recommended sources](docs/recommended-sources.md) for community forks that add extra providers.
 
+![Env page](docs/env-page-1.0.2.png)
+
 ## Supported Providers
 
 Claude, Codex, Copilot, Cursor, Devin, Grok, MiniMax, and more — [browse the collection](https://github.com/FrankieeW/openusage-collection). Want a provider that's not listed? Publish a plugin or [add a source](https://github.com/FrankieeW/openusage-collection#publishing).
