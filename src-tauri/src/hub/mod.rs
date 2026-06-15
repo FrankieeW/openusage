@@ -401,6 +401,10 @@ fn reload_plugins_and_emit(app: &AppHandle, state: &State<'_, Mutex<crate::AppSt
     };
     let fresh = crate::plugin_engine::reload_from_install_dir(&plugins_dir);
     let meta = crate::plugins_to_meta(&fresh);
+    log::info!(
+        "reload_plugins_and_emit: {} plugins loaded, emitting plugins-changed",
+        meta.len()
+    );
     {
         let mut s = lock_state(state)?;
         s.plugins = fresh;

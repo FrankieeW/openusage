@@ -259,6 +259,7 @@ export async function initHubSubscriptions() {
 
   try {
     await listen<PluginMeta[]>("plugins-changed", (event) => {
+      console.log("[hub] plugins-changed received:", event.payload.length, "plugins")
       // Update sidebar + settings page immediately, no restart needed
       useAppPluginStore.getState().setPluginsMeta(event.payload)
       // Refresh Hub source list too
