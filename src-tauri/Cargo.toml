@@ -1,6 +1,6 @@
 [package]
 name = "openusage-cc"
-version = "1.0.3"
+version = "1.0.4"
 description = "AI subscription tracker — Community Collection"
 authors = ["Frankie Wang"]
 edition = "2024"

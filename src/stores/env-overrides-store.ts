@@ -38,6 +38,11 @@ type EnvOverridesStore = {
    *  name appears in two or more enabled groups, the merged entry is a single
    *  literal override with value "[CONFLICT: NAME]". */
   flattened: () => FlattenedOverride[]
+
+  /** Persist immediately (flush debounce), then reload plugins so they
+   *  pick up the latest env overrides. Returns the reloaded plugin count
+   *  or null on failure. */
+  saveAndReload: () => Promise<number | null>
 }
 
 const CONFLICT_PREFIX = "[CONFLICT: "
@@ -208,4 +213,19 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
   },
 
   flattened: () => flattenGroups(get().groups, get().activeGroupIds),
+
+  saveAndReload: async () => {
+    const snapshot = { groups: get().groups, activeGroupIds: get().activeGroupIds }
+    await syncNow(snapshot)
+    if (!isTauri()) return null
+    try {
+      const count = await invoke<number>("hub_reload_plugins")
+      // Reload the webview so plugins re-inject env from the live override table.
+      window.location.reload()
+      return count
+    } catch (e) {
+      console.error("Failed to reload plugins after env save:", e)
+      return null
+    }
+  },
 }))

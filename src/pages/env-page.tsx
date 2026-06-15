@@ -1,5 +1,5 @@
-import { useEffect } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Check, Plus, Save, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEnvOverridesStore } from "@/stores/env-overrides-store"
 
@@ -17,10 +17,26 @@ export function EnvPage() {
   const updateOverride = useEnvOverridesStore((s) => s.updateOverride)
   const removeOverride = useEnvOverridesStore((s) => s.removeOverride)
   const setActiveGroupIds = useEnvOverridesStore((s) => s.setActiveGroupIds)
+  const saveAndReload = useEnvOverridesStore((s) => s.saveAndReload)
+
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     void init()
   }, [init])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaved(false)
+    try {
+      await saveAndReload()
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   // The store's addGroup creates the group with enabled=true but does not add
   // it to activeGroupIds. Since the UI's "Active" checkbox is the source of
@@ -62,10 +78,33 @@ export function EnvPage() {
             .
           </p>
         </div>
-        <Button size="sm" onClick={handleAddGroup} data-testid="env-new-group-button">
-          <Plus size={14} />
-          New Group
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={saved ? "secondary" : "default"}
+            onClick={handleSave}
+            disabled={saving}
+            data-testid="env-save-button"
+          >
+            {saving ? (
+              "Saving…"
+            ) : saved ? (
+              <>
+                <Check size={14} />
+                Saved
+              </>
+            ) : (
+              <>
+                <Save size={14} />
+                Save
+              </>
+            )}
+          </Button>
+          <Button size="sm" onClick={handleAddGroup} data-testid="env-new-group-button">
+            <Plus size={14} />
+            New Group
+          </Button>
+        </div>
       </div>
 
       {groups.length === 0 && (
