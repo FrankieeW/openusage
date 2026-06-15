@@ -3,6 +3,11 @@
 // side serializes snake_case via #[serde(rename_all = "camelCase")] where it
 // matters; enum variants are PascalCase strings.
 
+// Mirrors `DEFAULT_HUB_ID` in src-tauri/src/hub/registry.rs — the id of the
+// built-in official source ("Frankie's"). Used to distinguish it from
+// user-added custom sources in the UI.
+export const DEFAULT_HUB_ID = "default"
+
 export type SourceKind = "Github" | "GenericGit" | "LocalPath"
 
 export interface Source {

@@ -1,6 +1,12 @@
 import { Button } from "@/components/ui/button"
 import { useHubStore } from "@/lib/hub/cache"
+import { parseGithubTreeUrl } from "@/lib/hub/parse-source-url"
+import { openUrl } from "@tauri-apps/plugin-opener"
+import { ExternalLink } from "lucide-react"
 import { useState } from "react"
+
+const RECOMMENDED_SOURCES_URL =
+  "https://github.com/FrankieeW/openusage/blob/main/docs/recommended-sources.md"
 
 interface AddSourceDialogProps {
   onClose: () => void
@@ -22,6 +28,19 @@ export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
       trimmed.startsWith("file://") ||
       /^[\w.-]+\/[\w.-]+$/.test(trimmed) ||
       trimmed.startsWith("/"))
+
+  // Pasting a GitHub "tree" URL (e.g. .../tree/feat/warp) auto-fills the repo
+  // URL, label, and branch. Label is only filled if the user hasn't typed one.
+  function handleUrlChange(value: string) {
+    const parsed = parseGithubTreeUrl(value)
+    if (!parsed) {
+      setUrl(value)
+      return
+    }
+    setUrl(parsed.url)
+    setBranch(parsed.branch)
+    setLabel((prev) => (prev.trim() ? prev : parsed.label))
+  }
 
   async function submit() {
     if (!looksValid || submitting) return
@@ -50,16 +69,17 @@ export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
         <h2 className="text-base font-semibold">Add Source</h2>
         <p className="text-xs text-muted-foreground">
           GitHub URL, generic git URL, local path, or{" "}
-          <code>owner/repo</code> shorthand.
+          <code>owner/repo</code> shorthand. Paste a{" "}
+          <code>owner/repo/tree/branch</code> link to auto-fill the branch.
         </p>
         <label className="block">
           <span className="text-xs text-muted-foreground">URL or path</span>
           <input
             data-testid="hub-add-source-url"
             className="mt-1 w-full rounded-sm border border-input bg-background px-2 py-1.5 text-sm focus-visible:border-ring focus-visible:outline-none"
-            placeholder="https://github.com/owner/repo or /path/to/repo"
+            placeholder="owner/repo or /path/to/repo"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => handleUrlChange(e.target.value)}
             autoFocus
           />
         </label>
@@ -99,6 +119,15 @@ export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
             {submitting ? "Adding…" : "Add & Fetch"}
           </Button>
         </div>
+        <button
+          type="button"
+          data-testid="hub-recommended-sources-link"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => openUrl(RECOMMENDED_SOURCES_URL).catch(console.error)}
+        >
+          <ExternalLink size={12} />
+          Browse recommended sources
+        </button>
       </div>
     </div>
   )

@@ -22,7 +22,7 @@ export function HubPage() {
   }, [refreshSources])
 
   return (
-    <div className="py-3 px-4 space-y-4">
+    <div className="py-3 px-1 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold mb-0">Community Collection</h1>
