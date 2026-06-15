@@ -14,6 +14,7 @@ pub const DEFAULT_HUB_LABEL: &str = "Frankie's";
 pub const DEFAULT_HUB_ID: &str = "default";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Source {
     pub id: String,
     pub label: String,

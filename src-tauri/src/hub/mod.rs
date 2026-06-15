@@ -117,6 +117,7 @@ impl From<registry::RegistryError> for HubError {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
     pub id: String,
     pub name: String,
@@ -138,6 +139,7 @@ pub struct SkippedPlugin {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HubBrowseView {
     pub source: Source,
     pub available: Vec<PluginInfo>,
@@ -145,6 +147,7 @@ pub struct HubBrowseView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
     pub source_id: String,
     pub plugin_id: String,
