@@ -1,7 +1,8 @@
 // RED phase: registry read/write stubs that don't actually persist anything.
 // Tests below expect round-trip + atomic write + crash recovery semantics.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)] use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 

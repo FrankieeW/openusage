@@ -3,7 +3,8 @@
 // `write_install_metadata`, `copy_plugin_to_install_dir`, and the public
 // `hub_install` are all stubs that return errors or empty values.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)] use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
