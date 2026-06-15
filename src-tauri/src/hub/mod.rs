@@ -394,7 +394,7 @@ fn lock_state<'a>(state: &'a State<'_, Mutex<crate::AppState>>) -> Result<std::s
 fn reload_plugins_and_emit(app: &AppHandle, state: &State<'_, Mutex<crate::AppState>>) -> Result<(), HubError> {
     let plugins_dir = {
         let s = lock_state(state)?;
-        s.app_data_dir.join("plugins")
+        s.plugins_dir.clone()
     };
     let fresh = crate::plugin_engine::reload_from_install_dir(&plugins_dir);
     let meta = crate::plugins_to_meta(&fresh);
@@ -411,7 +411,7 @@ fn reload_plugins_and_emit(app: &AppHandle, state: &State<'_, Mutex<crate::AppSt
 /// and report orphan-source plugins back to JS via `hub-orphans-detected`.
 fn report_orphans(app: &AppHandle, state: &State<'_, Mutex<crate::AppState>>) {
     let (hub_dir, plugins_dir, registry) = match lock_state(state) {
-        Ok(s) => (s.hub_dir.clone(), s.app_data_dir.join("plugins"), s.hub_registry.clone()),
+        Ok(s) => (s.hub_dir.clone(), s.plugins_dir.clone(), s.hub_registry.clone()),
         Err(_) => return,
     };
     let report = install::startup_sweep(&hub_dir, &plugins_dir, &registry);
@@ -494,7 +494,7 @@ pub async fn hub_remove_source(
         let _ = std::fs::remove_dir_all(&cache_path);
     }
     // Reclassify installed plugins from this source as local (unmanaged)
-    let plugins_dir = s.app_data_dir.join("plugins");
+    let plugins_dir = s.plugins_dir.clone();
     if plugins_dir.is_dir() {
         if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
             for entry in entries.flatten() {
@@ -531,7 +531,7 @@ pub async fn hub_browse_source(
             .find(|src| src.id == source_id)
             .cloned()
             .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
-        (s.hub_dir.clone(), s.app_data_dir.join("plugins"), source)
+        (s.hub_dir.clone(), s.plugins_dir.clone(), source)
     };
 
     let cache_path = cache_dir_for(&hub_dir, &source_id);
@@ -573,7 +573,7 @@ pub async fn hub_install(
             .find(|src| src.id == source_id)
             .cloned()
             .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
-        (s.hub_dir.clone(), s.app_data_dir.join("plugins"), source)
+        (s.hub_dir.clone(), s.plugins_dir.clone(), source)
     };
 
     let safe_label = sanitize_label(&source.label);
@@ -628,7 +628,7 @@ pub async fn hub_uninstall(
 ) -> Result<(), HubError> {
     {
         let s = lock_state(&state)?;
-        let plugins_dir = s.app_data_dir.join("plugins");
+        let plugins_dir = s.plugins_dir.clone();
         let dir_name = if let Some(ref sid) = source_id {
             match find_install_dir(&plugins_dir, &plugin_id, sid) {
                 Some(d) => {
@@ -695,7 +695,7 @@ pub async fn hub_refresh_source(
             .find(|src| src.id == source_id)
             .cloned()
             .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
-        (s.hub_dir.clone(), s.app_data_dir.join("plugins"), source)
+        (s.hub_dir.clone(), s.plugins_dir.clone(), source)
     };
 
     let cache_path = cache_dir_for(&hub_dir, &source_id);
@@ -740,7 +740,7 @@ pub async fn hub_check_updates(
     };
     let (hub_dir, plugins_dir) = {
         let s = lock_state(&state)?;
-        (s.hub_dir.clone(), s.app_data_dir.join("plugins"))
+        (s.hub_dir.clone(), s.plugins_dir.clone())
     };
 
     let mut updates = Vec::new();
@@ -787,7 +787,7 @@ pub async fn hub_list_local_plugins(
 ) -> Result<Vec<PluginInfo>, HubError> {
     let plugins_dir = {
         let s = lock_state(&state)?;
-        s.app_data_dir.join("plugins")
+        s.plugins_dir.clone()
     };
     let mut locals = Vec::new();
     if !plugins_dir.is_dir() {

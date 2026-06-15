@@ -145,6 +145,7 @@ pub struct AppState {
     pub app_version: String,
     pub hub_dir: PathBuf,
     pub hub_registry: hub::registry::RegistryFile,
+    pub plugins_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -597,7 +598,7 @@ pub fn run() {
                 redacted_app_data_dir
             );
 
-            let (_, plugins) = plugin_engine::initialize_plugins(&app_data_dir, &resource_dir);
+            let (plugins_dir, plugins) = plugin_engine::initialize_plugins(&app_data_dir, &resource_dir);
             let known_plugin_ids: Vec<String> =
                 plugins.iter().map(|p| p.manifest.id.clone()).collect();
 
@@ -623,6 +624,7 @@ pub fn run() {
                 app_version: app.package_info().version.to_string(),
                 hub_dir,
                 hub_registry,
+                plugins_dir,
             }));
 
             local_http_api::init(&app_data_dir, known_plugin_ids);
