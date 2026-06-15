@@ -28,7 +28,7 @@ export function PluginBrowser({ sourceId, available, skipped }: PluginBrowserPro
 
   return (
     <div className="space-y-1 pb-3">
-      <div className="px-4 py-1.5">
+      <div className="px-1 py-1.5">
         <span className="text-xs text-muted-foreground">
           {available.length} plugin{available.length === 1 ? "" : "s"}
           {skipped.length > 0 ? `, ${skipped.length} skipped` : ""}
@@ -57,7 +57,7 @@ export function PluginBrowser({ sourceId, available, skipped }: PluginBrowserPro
         </div>
       )}
 
-      <div className="space-y-1.5 px-4">
+      <div className="space-y-0.5">
         {available.map((plugin) => (
           <PluginCard
             key={plugin.id}
@@ -94,9 +94,9 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
       data-testid="hub-plugin-card"
       data-plugin-id={plugin.id}
       className={cn(
-        "bg-muted/50 rounded-lg px-3 py-2 space-y-1.5",
+        "px-3 py-1.5 space-y-1.5",
         (installLoading || uninstallLoading) && "opacity-60",
-        plugin.unmanaged && "border-dashed",
+        plugin.unmanaged && "border-l-2 border-dashed border-muted-foreground/30 pl-2",
       )}
     >
       <div className="flex items-center gap-2">
