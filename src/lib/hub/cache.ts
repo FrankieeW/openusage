@@ -286,8 +286,5 @@ export async function initHubSubscriptions() {
   } catch (err) {
     // Not running inside Tauri (e.g. vitest in jsdom) — silently no-op
     subscribed = false
-    if (process.env.NODE_ENV !== "test") {
-      console.warn("[hub] failed to subscribe to events:", err)
-    }
   }
 }
