@@ -153,10 +153,11 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
   init: async () => {
     if (get().loaded) return
     try {
-      const [groups, activeGroupIds] = await Promise.all([
-        loadEnvGroups(),
-        loadActiveGroupIds(),
-      ])
+      const groups = await loadEnvGroups()
+      // Pass pre-loaded groups so loadActiveGroupIds filters against the same
+      // group-id set — avoids the race where a concurrent migration produces
+      // different ids and silently drops all active-group entries.
+      const activeGroupIds = await loadActiveGroupIds(groups)
       set({ groups, activeGroupIds, loaded: true })
       await syncNow({ groups, activeGroupIds })
     } catch (e) {

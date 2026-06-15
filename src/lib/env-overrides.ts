@@ -85,6 +85,14 @@ export function normalizeGroups(raw: unknown): EnvGroup[] {
 }
 
 export async function loadEnvGroups(): Promise<EnvGroup[]> {
+  // Always prefer the groups key if it exists — the legacy key is now also
+  // written by saveEnvOverridesLegacy for the Rust startup path, so we must
+  // NOT re-trigger migration once groups have already been created.
+  const stored = await settingsStore.get<unknown>(ENV_GROUPS_KEY)
+  if (stored !== null && stored !== undefined) {
+    return normalizeGroups(stored)
+  }
+
   const legacy = await settingsStore.get<unknown>(LEGACY_ENV_OVERRIDES_KEY)
   if (legacy !== null && legacy !== undefined) {
     const id = makeId()
@@ -106,8 +114,7 @@ export async function loadEnvGroups(): Promise<EnvGroup[]> {
     await settingsStore.save()
     return groups
   }
-  const stored = await settingsStore.get<unknown>(ENV_GROUPS_KEY)
-  return normalizeGroups(stored)
+  return []
 }
 
 export async function saveEnvGroups(groups: EnvGroup[]): Promise<void> {
@@ -115,13 +122,15 @@ export async function saveEnvGroups(groups: EnvGroup[]): Promise<void> {
   await settingsStore.save()
 }
 
-export async function loadActiveGroupIds(): Promise<string[]> {
+export async function loadActiveGroupIds(
+  existingGroups?: EnvGroup[],
+): Promise<string[]> {
   const ids = await settingsStore.get<unknown>(ENV_ACTIVE_KEY)
   if (!Array.isArray(ids)) return []
-  const groups = await loadEnvGroups()
-  // When no groups exist yet there's nothing to filter against; return as-is so
-  // a freshly-saved id list round-trips. Once groups are present, drop any
-  // stale ids that no longer correspond to a known group.
+  // Accept pre-loaded groups so callers that already called loadEnvGroups can
+  // avoid the race where a concurrent migration produces a different group-id
+  // set than the one referenced by envActiveGroupIds.
+  const groups = existingGroups ?? (await loadEnvGroups())
   if (groups.length === 0) {
     return ids.filter((x): x is string => typeof x === "string")
   }
