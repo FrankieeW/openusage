@@ -630,9 +630,29 @@ pub async fn hub_uninstall(
         let s = lock_state(&state)?;
         let plugins_dir = s.app_data_dir.join("plugins");
         let dir_name = if let Some(ref sid) = source_id {
-            // Per-source install: find dir by metadata match
-            find_install_dir(&plugins_dir, &plugin_id, sid)
-                .unwrap_or(plugin_id.clone())
+            match find_install_dir(&plugins_dir, &plugin_id, sid) {
+                Some(d) => {
+                    log::info!("hub_uninstall: found dir {} for {}/{}", d, plugin_id, sid);
+                    d
+                }
+                None => {
+                    // Fallback: try plain plugin_id for Local/manual installs
+                    let plain = plugins_dir.join(&plugin_id);
+                    if plain.join(install::METADATA_FILENAME).exists() {
+                        log::info!(
+                            "hub_uninstall: using plain dir {} for {}/{}",
+                            plugin_id, plugin_id, sid
+                        );
+                        plugin_id.clone()
+                    } else {
+                        log::warn!(
+                            "hub_uninstall: no install dir found for {}/{}, removing {} anyway",
+                            plugin_id, sid, plugin_id
+                        );
+                        plugin_id.clone()
+                    }
+                }
+            }
         } else {
             plugin_id.clone()
         };
