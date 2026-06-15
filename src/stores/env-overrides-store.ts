@@ -31,6 +31,29 @@ async function persistAndSync(overrides: EnvOverride[]): Promise<void> {
   }
 }
 
+const SYNC_DEBOUNCE_MS = 250
+
+type PendingSync = {
+  timer: ReturnType<typeof setTimeout> | null
+  latest: EnvOverride[] | null
+}
+
+const pendingSync: PendingSync = { timer: null, latest: null }
+
+function scheduleSync(overrides: EnvOverride[]): void {
+  pendingSync.latest = overrides
+  if (pendingSync.timer !== null) {
+    clearTimeout(pendingSync.timer)
+  }
+  pendingSync.timer = setTimeout(() => {
+    const toSync = pendingSync.latest
+    pendingSync.timer = null
+    pendingSync.latest = null
+    if (toSync === null) return
+    void persistAndSync(toSync)
+  }, SYNC_DEBOUNCE_MS)
+}
+
 export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
   overrides: [],
   loaded: false,
@@ -52,7 +75,7 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
       { name: "", kind: "literal", value: "" },
     ]
     set({ overrides: next })
-    void persistAndSync(next)
+    scheduleSync(next)
   },
 
   updateOverride: (index, patch) => {
@@ -60,12 +83,12 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
       i === index ? { ...entry, ...patch } : entry
     )
     set({ overrides: next })
-    void persistAndSync(next)
+    scheduleSync(next)
   },
 
   removeOverride: (index) => {
     const next = get().overrides.filter((_, i) => i !== index)
     set({ overrides: next })
-    void persistAndSync(next)
+    scheduleSync(next)
   },
 }))
