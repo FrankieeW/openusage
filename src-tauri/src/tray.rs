@@ -154,7 +154,7 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
-    let tray = TrayIconBuilder::with_id("tray")
+    TrayIconBuilder::with_id("tray")
         .icon(icon)
         .tooltip("OpenUsage")
         .menu(&menu)
