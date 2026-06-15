@@ -109,8 +109,12 @@ export function AboutDialog({ version, onClose }: AboutDialogProps) {
 
         <div className="text-sm text-muted-foreground space-y-1">
           <p>
-            Built by{" "}
+            Originally by{" "}
             <ExternalLink href="https://itsbyrob.in/x">Robin Ebers</ExternalLink>
+          </p>
+          <p>
+            Fork maintained by{" "}
+            <ExternalLink href="https://github.com/FrankieeW">Frankie Wang</ExternalLink>
           </p>
           <p>
             Open source on{" "}
@@ -119,13 +123,9 @@ export function AboutDialog({ version, onClose }: AboutDialogProps) {
             </ExternalLink>
           </p>
           <p className="text-xs pt-1">
-            Maintainers:{" "}
-            <ExternalLink href="https://github.com/validatedev">
-              validatedev
-            </ExternalLink>
-            ,{" "}
-            <ExternalLink href="https://github.com/davidarny">
-              davidarny
+            Upstream:{" "}
+            <ExternalLink href="https://github.com/robinebers/openusage">
+              robinebers/openusage
             </ExternalLink>
           </p>
         </div>
