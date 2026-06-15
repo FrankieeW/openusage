@@ -9,9 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-pub use registry::{
-    RegistryFile, Source, DEFAULT_UPSTREAM_ID, DEFAULT_UPSTREAM_LABEL, DEFAULT_UPSTREAM_URL,
-};
+pub use registry::Source;
 pub use source::SourceKind;
 
 /// Error type returned to the JS bridge. Always carries a stable `code` and a
@@ -363,6 +361,320 @@ pub fn derive_label_from_url(url: &str) -> String {
         .rev()
         .collect::<Vec<_>>()
         .join("/")
+}
+
+// ---------------------------------------------------------------------------
+// Tauri command layer
+// ---------------------------------------------------------------------------
+
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, State};
+
+fn lock_state<'a>(state: &'a State<'_, Mutex<crate::AppState>>) -> Result<std::sync::MutexGuard<'a, crate::AppState>, HubError> {
+    state.lock().map_err(|e| HubError::io(format!("state poisoned: {}", e)))
+}
+
+/// Reload the installed plugins list and emit `plugins-changed` so the JS side
+/// can refresh. Errors are logged; not propagated (best-effort).
+fn reload_plugins_and_emit(app: &AppHandle, state: &State<'_, Mutex<crate::AppState>>) -> Result<(), HubError> {
+    let plugins_dir = {
+        let s = lock_state(state)?;
+        s.app_data_dir.join("plugins")
+    };
+    let fresh = crate::plugin_engine::reload_from_install_dir(&plugins_dir);
+    let meta = crate::plugins_to_meta(&fresh);
+    {
+        let mut s = lock_state(state)?;
+        s.plugins = fresh;
+    }
+    app.emit("plugins-changed", meta)
+        .map_err(|e| HubError::io(format!("emit plugins-changed: {}", e)))?;
+    Ok(())
+}
+
+/// Re-classify all installed plugins against the current registry/source map
+/// and report orphan-source plugins back to JS via `hub-orphans-detected`.
+fn report_orphans(app: &AppHandle, state: &State<'_, Mutex<crate::AppState>>) {
+    let (hub_dir, plugins_dir, registry) = match lock_state(state) {
+        Ok(s) => (s.hub_dir.clone(), s.app_data_dir.join("plugins"), s.hub_registry.clone()),
+        Err(_) => return,
+    };
+    let report = install::startup_sweep(&hub_dir, &plugins_dir, &registry);
+    if !report.orphan_source_plugins.is_empty() || !report.unmanaged_plugins.is_empty() {
+        let _ = app.emit(
+            "hub-orphans-detected",
+            serde_json::json!({
+                "orphanSourcePlugins": report.orphan_source_plugins,
+                "unmanagedPlugins": report.unmanaged_plugins,
+            }),
+        );
+    }
+}
+
+#[tauri::command]
+pub async fn hub_list_sources(
+    state: State<'_, Mutex<crate::AppState>>,
+) -> Result<Vec<Source>, HubError> {
+    let s = lock_state(&state)?;
+    Ok(s.hub_registry.sources.clone())
+}
+
+#[tauri::command]
+pub async fn hub_add_source(
+    _app: AppHandle,
+    state: State<'_, Mutex<crate::AppState>>,
+    url: String,
+    label: Option<String>,
+) -> Result<Source, HubError> {
+    let canonical = source::canonicalize(&url).map_err(|_| HubError::invalid_url())?;
+    let kind = canonical.kind;
+    let url = canonical.url.clone();
+
+    let id = format!("src-{}", uuid::Uuid::new_v4().simple());
+    let label = label.unwrap_or_else(|| derive_label_from_url(&canonical.url));
+    let now = now_millis();
+    let new_source = Source {
+        id: id.clone(),
+        label,
+        url: url.clone(),
+        kind,
+        added_at: now,
+        last_refreshed_at: None,
+        auto_check: false,
+    };
+
+    // Clone first (network/disk I/O), then commit to registry only if clone
+    // succeeds — avoids half-state if clone fails.
+    let cache_path = {
+        let s = lock_state(&state)?;
+        cache_dir_for(&s.hub_dir, &id)
+    };
+    match kind {
+        SourceKind::Github | SourceKind::GenericGit => {
+            git_ops::clone(&url, &cache_path).await?;
+        }
+        SourceKind::LocalPath => {
+            let src = canonical
+                .local_path
+                .as_ref()
+                .ok_or_else(HubError::invalid_url)?;
+            install::copy_dir_to(src, &cache_path).map_err(HubError::from)?;
+        }
+    }
+
+    let mut s = lock_state(&state)?;
+    s.hub_registry.sources.push(new_source.clone());
+    registry::write(&s.hub_dir, &s.hub_registry)?;
+    Ok(new_source)
+}
+
+#[tauri::command]
+pub async fn hub_remove_source(
+    state: State<'_, Mutex<crate::AppState>>,
+    source_id: String,
+) -> Result<(), HubError> {
+    let mut s = lock_state(&state)?;
+    let cache_path = cache_dir_for(&s.hub_dir, &source_id);
+    if cache_path.exists() {
+        let _ = std::fs::remove_dir_all(&cache_path);
+    }
+    s.hub_registry.sources.retain(|src| src.id != source_id);
+    registry::write(&s.hub_dir, &s.hub_registry)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hub_browse_source(
+    state: State<'_, Mutex<crate::AppState>>,
+    source_id: String,
+) -> Result<HubBrowseView, HubError> {
+    let (hub_dir, plugins_dir, source) = {
+        let s = lock_state(&state)?;
+        let source = s
+            .hub_registry
+            .sources
+            .iter()
+            .find(|src| src.id == source_id)
+            .cloned()
+            .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
+        (s.hub_dir.clone(), s.app_data_dir.join("plugins"), source)
+    };
+
+    let cache_path = cache_dir_for(&hub_dir, &source_id);
+    let installed = build_installed_lookup(&plugins_dir);
+    let (available, skipped) =
+        discover_cache_plugins(&cache_path, &source_id, &plugins_dir, &installed);
+    Ok(HubBrowseView {
+        source,
+        available,
+        skipped,
+    })
+}
+
+#[tauri::command]
+pub async fn hub_install(
+    app: AppHandle,
+    state: State<'_, Mutex<crate::AppState>>,
+    source_id: String,
+    plugin_id: String,
+) -> Result<(), HubError> {
+    let (hub_dir, plugins_dir, source) = {
+        let s = lock_state(&state)?;
+        let source = s
+            .hub_registry
+            .sources
+            .iter()
+            .find(|src| src.id == source_id)
+            .cloned()
+            .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
+        (s.hub_dir.clone(), s.app_data_dir.join("plugins"), source)
+    };
+
+    install::check_conflict(&plugins_dir, &plugin_id, &source_id)?;
+
+    let source_plugin_dir = cache_dir_for(&hub_dir, &source_id)
+        .join("plugins")
+        .join(&plugin_id);
+    if !source_plugin_dir.is_dir() {
+        return Err(HubError::not_found(format!(
+            "plugin {} in source {}",
+            plugin_id, source_id
+        )));
+    }
+    let manifest_text = std::fs::read_to_string(source_plugin_dir.join("plugin.json"))
+        .map_err(|e| HubError::io(e.to_string()))?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_text)
+        .map_err(|e| HubError::manifest_parse(e.to_string()))?;
+    let version = manifest
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.0.0")
+        .to_string();
+
+    install::copy_plugin_to_install_dir(&source_plugin_dir, &plugins_dir, &plugin_id)?;
+    let metadata = install::InstallMetadata {
+        source_id: source.id.clone(),
+        source_url: source.url.clone(),
+        plugin_id: plugin_id.clone(),
+        installed_version: version,
+        installed_at: now_millis(),
+    };
+    install::write_install_metadata(&plugins_dir, &metadata)?;
+
+    reload_plugins_and_emit(&app, &state)?;
+    report_orphans(&app, &state);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hub_uninstall(
+    app: AppHandle,
+    state: State<'_, Mutex<crate::AppState>>,
+    plugin_id: String,
+) -> Result<(), HubError> {
+    {
+        let s = lock_state(&state)?;
+        install::remove_installed_plugin(&s.app_data_dir.join("plugins"), &plugin_id)?;
+    }
+    reload_plugins_and_emit(&app, &state)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hub_refresh_source(
+    state: State<'_, Mutex<crate::AppState>>,
+    source_id: String,
+) -> Result<HubBrowseView, HubError> {
+    let (hub_dir, plugins_dir, source) = {
+        let s = lock_state(&state)?;
+        let source = s
+            .hub_registry
+            .sources
+            .iter()
+            .find(|src| src.id == source_id)
+            .cloned()
+            .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
+        (s.hub_dir.clone(), s.app_data_dir.join("plugins"), source)
+    };
+
+    let cache_path = cache_dir_for(&hub_dir, &source_id);
+    if !cache_path.exists() {
+        return Err(HubError::not_found(format!(
+            "no cache for source {}; re-add the source",
+            source_id
+        )));
+    }
+
+    match source.kind {
+        SourceKind::LocalPath => {
+            // No fetch — the local path is the source of truth
+        }
+        SourceKind::Github | SourceKind::GenericGit => {
+            git_ops::fetch_and_reset(&cache_path).await?;
+        }
+    }
+
+    let installed = build_installed_lookup(&plugins_dir);
+    let (available, skipped) =
+        discover_cache_plugins(&cache_path, &source_id, &plugins_dir, &installed);
+    Ok(HubBrowseView {
+        source,
+        available,
+        skipped,
+    })
+}
+
+#[tauri::command]
+pub async fn hub_check_updates(
+    app: AppHandle,
+    state: State<'_, Mutex<crate::AppState>>,
+) -> Result<Vec<UpdateInfo>, HubError> {
+    let source_ids: Vec<(String, SourceKind)> = {
+        let s = lock_state(&state)?;
+        s.hub_registry
+            .sources
+            .iter()
+            .map(|src| (src.id.clone(), src.kind))
+            .collect()
+    };
+    let (hub_dir, plugins_dir) = {
+        let s = lock_state(&state)?;
+        (s.hub_dir.clone(), s.app_data_dir.join("plugins"))
+    };
+
+    let mut updates = Vec::new();
+    for (id, kind) in source_ids {
+        let cache_path = cache_dir_for(&hub_dir, &id);
+        if !cache_path.exists() {
+            continue;
+        }
+        if matches!(kind, SourceKind::Github | SourceKind::GenericGit) {
+            if let Err(err) = git_ops::fetch_and_reset(&cache_path).await {
+                log::warn!("hub_check_updates: refresh {} failed: {}", id, err);
+                continue;
+            }
+        }
+        let installed = build_installed_lookup(&plugins_dir);
+        let (available, _) = discover_cache_plugins(&cache_path, &id, &plugins_dir, &installed);
+        for plugin in available {
+            if let (true, Some(from)) = (plugin.update_available, plugin.installed_version.clone()) {
+                updates.push(UpdateInfo {
+                    source_id: id.clone(),
+                    plugin_id: plugin.id.clone(),
+                    from,
+                    to: plugin.available_version,
+                });
+            }
+        }
+    }
+
+    if !updates.is_empty() {
+        let _ = app.emit(
+            "hub-updates-available",
+            serde_json::json!({ "updates": &updates }),
+        );
+    }
+    Ok(updates)
 }
 
 #[cfg(test)]
