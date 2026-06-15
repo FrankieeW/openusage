@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { listen } from "@tauri-apps/api/event"
 
 import { hubCommands } from "./commands"
 import type {
@@ -219,4 +220,63 @@ export function pluginLoadingKey(sourceId: string, pluginId: string) {
 }
 export function uninstallLoadingKey(pluginId: string) {
   return `uninstall:${pluginId}`
+}
+
+// ---------------------------------------------------------------------------
+// Event subscriptions — installed once when the Hub store module is imported.
+// ---------------------------------------------------------------------------
+
+let subscribed = false
+
+/**
+ * Test-only reset hook. The `subscribed` flag is a module-local so it would
+ * otherwise leak across vitest tests in the same file.
+ */
+export function __resetHubSubscriptionsForTesting() {
+  subscribed = false
+}
+
+/**
+ * Subscribe to Tauri events emitted by the Rust side:
+ *   - `plugins-changed` → refresh sources list (registry may have changed
+ *     plugin ownership) and re-browse every open source
+ *   - `hub-orphans-detected` → surface in store.error for the user to act on
+ *
+ * Idempotent: calling more than once is a no-op. Call from the Hub page's
+ * mount effect so the JS side stays in sync without restart.
+ */
+export async function initHubSubscriptions() {
+  if (subscribed) return
+  subscribed = true
+
+  try {
+    await listen<unknown[]>("plugins-changed", () => {
+      // Re-fetch sources to reflect any new install/uninstall
+      void useHubStore.getState().refreshSources()
+    })
+    await listen<{
+      orphanSourcePlugins: string[]
+      unmanagedPlugins: string[]
+    }>("hub-orphans-detected", (e) => {
+      const payload = e.payload
+      const lines: string[] = []
+      if (payload.orphanSourcePlugins?.length) {
+        lines.push(`Source removed for: ${payload.orphanSourcePlugins.join(", ")}`)
+      }
+      if (payload.unmanagedPlugins?.length) {
+        lines.push(`Unmanaged plugins: ${payload.unmanagedPlugins.join(", ")}`)
+      }
+      if (lines.length) {
+        useHubStore.setState({
+          error: { code: "IoError", message: lines.join(" · ") },
+        })
+      }
+    })
+  } catch (err) {
+    // Not running inside Tauri (e.g. vitest in jsdom) — silently no-op
+    subscribed = false
+    if (process.env.NODE_ENV !== "test") {
+      console.warn("[hub] failed to subscribe to events:", err)
+    }
+  }
 }
