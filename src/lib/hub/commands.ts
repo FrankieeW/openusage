@@ -43,4 +43,5 @@ export const hubCommands = {
     call<HubBrowseView>("hub_refresh_source", { sourceId }),
   checkUpdates: () => call<UpdateInfo[]>("hub_check_updates"),
   listLocalPlugins: () => call<PluginInfo[]>("hub_list_local_plugins"),
+  reloadPlugins: () => call<number>("hub_reload_plugins"),
 }

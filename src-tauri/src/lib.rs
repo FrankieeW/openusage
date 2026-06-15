@@ -662,6 +662,7 @@ pub fn run() {
             hub::hub_install,
             hub::hub_uninstall,
             hub::hub_refresh_source,
+            hub::hub_reload_plugins,
             hub::hub_check_updates,
             hub::hub_list_local_plugins
         ])

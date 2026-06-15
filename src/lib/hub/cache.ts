@@ -190,14 +190,15 @@ export const useHubStore = create<HubState>((set, get) => ({
     }))
     try {
       await hubCommands.uninstall(pluginId, sourceId)
-      // Mark uninstalled across all browsed sources
+      // Multi-source: only mark the entry that was actually installed from this
+      // source as uninstalled. Same id from a different source stays as-is.
       set((s) => {
         const next: Record<string, HubBrowseView> = {}
         for (const [sid, view] of Object.entries(s.browseBySource)) {
           next[sid] = {
             ...view,
             available: view.available.map((p) =>
-              p.id === pluginId
+              p.id === pluginId && p.installedSourceId === sourceId
                 ? { ...p, installed: false, installedSourceId: null, installedVersion: null, updateAvailable: false, unmanaged: false }
                 : p,
             ),

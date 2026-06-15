@@ -756,6 +756,22 @@ pub async fn hub_refresh_source(
     })
 }
 
+/// Public: re-walk the plugins directory and re-emit `plugins-changed`. Used by
+/// the Settings page's manual "Reload Plugins" button. Same effect as the
+/// auto-broadcast that fires after install/uninstall, but on demand.
+#[tauri::command]
+pub fn hub_reload_plugins(
+    app: AppHandle,
+    state: State<'_, Mutex<crate::AppState>>,
+) -> Result<usize, HubError> {
+    reload_plugins_and_emit(&app, &state)?;
+    let count = {
+        let s = lock_state(&state)?;
+        s.plugins.len()
+    };
+    Ok(count)
+}
+
 #[tauri::command]
 pub async fn hub_check_updates(
     app: AppHandle,

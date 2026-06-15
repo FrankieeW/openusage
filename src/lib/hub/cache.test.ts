@@ -116,11 +116,11 @@ describe("useHubStore", () => {
     expect(useHubStore.getState().error?.code).toBe("Conflict")
   })
 
-  it("uninstall clears installed flags across browsed sources", async () => {
+  it("uninstall clears installed flags for the entry from the matching source", async () => {
     useHubStore.setState({
       browseBySource: { s1: sampleBrowse("s1", "p1") },
     })
-    // mark p1 installed
+    // mark p1 installed from s1
     useHubStore.setState((s) => ({
       browseBySource: {
         s1: {
@@ -128,16 +128,59 @@ describe("useHubStore", () => {
           available: s.browseBySource.s1.available.map((p) => ({
             ...p,
             installed: true,
+            installedSourceId: "s1",
             installedVersion: "0.6.27",
           })),
         },
       },
     }))
     invokeMock.mockResolvedValueOnce(undefined)
-    await useHubStore.getState().uninstall("p1")
+    await useHubStore.getState().uninstall("p1", "s1")
     const p1 = useHubStore.getState().browseBySource.s1.available[0]
     expect(p1.installed).toBe(false)
     expect(p1.installedSourceId).toBeNull()
+  })
+
+  it("uninstall from one source does not clear the same plugin id from a different source", async () => {
+    // p1 is installed from s2; the user uninstalls it from s2. The s1 entry
+    // (which shows p1 as "managed by s2" — not installed locally) must stay unchanged.
+    useHubStore.setState({
+      browseBySource: {
+        s1: sampleBrowse("s1", "p1"),
+        s2: sampleBrowse("s2", "p1"),
+      },
+    })
+    useHubStore.setState((s) => ({
+      browseBySource: {
+        s1: {
+          ...s.browseBySource.s1,
+          available: s.browseBySource.s1.available.map((p) => ({
+            ...p,
+            installed: false,
+            installedSourceId: "s2",
+            installedVersion: "0.6.27",
+          })),
+        },
+        s2: {
+          ...s.browseBySource.s2,
+          available: s.browseBySource.s2.available.map((p) => ({
+            ...p,
+            installed: true,
+            installedSourceId: "s2",
+            installedVersion: "0.6.27",
+          })),
+        },
+      },
+    }))
+    invokeMock.mockResolvedValueOnce(undefined)
+    await useHubStore.getState().uninstall("p1", "s2")
+    const state = useHubStore.getState()
+    // s2 entry: cleared
+    expect(state.browseBySource.s2.available[0].installed).toBe(false)
+    expect(state.browseBySource.s2.available[0].installedSourceId).toBeNull()
+    // s1 entry: untouched (still shows "managed by s2")
+    expect(state.browseBySource.s1.available[0].installed).toBe(false)
+    expect(state.browseBySource.s1.available[0].installedSourceId).toBe("s2")
   })
 
   it("removeSource drops source and its browse cache", async () => {

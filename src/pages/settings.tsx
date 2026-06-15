@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { GripVertical, RefreshCw } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { GlobalShortcutSection } from "@/components/global-shortcut-section";
@@ -40,6 +40,8 @@ import {
 import { getTimeFormatter } from "@/lib/reset-tooltip";
 import type { TraySettingsPreview } from "@/hooks/app/use-tray-icon";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+import { hubCommands } from "@/lib/hub/commands";
 
 interface PluginConfig {
   id: string;
@@ -330,6 +332,19 @@ export function SettingsPage({
     })
   );
 
+  const [reloadingPlugins, setReloadingPlugins] = useState(false)
+  const handleReloadPlugins = async () => {
+    if (reloadingPlugins) return
+    setReloadingPlugins(true)
+    try {
+      await hubCommands.reloadPlugins()
+    } catch (error) {
+      console.error("Failed to reload plugins:", error)
+    } finally {
+      setReloadingPlugins(false)
+    }
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
 
@@ -589,7 +604,20 @@ export function SettingsPage({
         </label>
       </section>
       <section>
-        <h3 className="text-lg font-semibold mb-0">Plugins</h3>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-lg font-semibold mb-0">Plugins</h3>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={handleReloadPlugins}
+            disabled={reloadingPlugins}
+            data-testid="settings-reload-plugins"
+            aria-label="Reload Plugins"
+          >
+            <RefreshCw size={12} className={reloadingPlugins ? "animate-spin" : undefined} />
+            {reloadingPlugins ? "Reloading" : "Reload Plugins"}
+          </Button>
+        </div>
         <p className="text-sm text-muted-foreground mb-2">
           Your AI coding lineup
         </p>
