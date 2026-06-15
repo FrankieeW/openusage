@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react"
 
 const invokeMock = vi.fn(async () => {})
 vi.mock("@tauri-apps/api/core", () => ({
@@ -14,9 +14,8 @@ vi.mock("@tauri-apps/plugin-store", () => ({
       if (!storeState.has(key)) return null
       return storeState.get(key) as T | null
     }
-    async set<T>(key: string, value: T): Promise<void> {
-      storeState.set(key, value)
-    }
+    async set<T>(key: string, value: T): Promise<void> { storeState.set(key, value) }
+    async delete(key: string): Promise<void> { storeState.delete(key) }
     async save(): Promise<void> {}
   },
 }))
@@ -28,44 +27,48 @@ describe("EnvPage", () => {
   beforeEach(() => {
     storeState.clear()
     invokeMock.mockClear()
-    useEnvOverridesStore.setState({ overrides: [], loaded: false })
+    useEnvOverridesStore.setState({ groups: [], activeGroupIds: [], loaded: false })
   })
 
-  it("shows an empty state when there are no overrides", async () => {
+  it("shows an empty state when there are no groups", async () => {
     render(<EnvPage />)
     expect(await screen.findByTestId("env-empty-state")).toBeInTheDocument()
   })
 
-  it("adds a row when Add Variable is clicked", async () => {
+  it("adds a group when New Group is clicked", async () => {
     render(<EnvPage />)
-    fireEvent.click(await screen.findByTestId("env-add-button"))
-    expect(screen.getByTestId("env-name-input-0")).toBeInTheDocument()
+    fireEvent.click(await screen.findByTestId("env-new-group-button"))
+    expect(screen.getAllByTestId(/^env-group-/).length).toBeGreaterThan(0)
   })
 
-  it("persists a completed literal override to the backend", async () => {
+  it("persists a $ reference row to the backend with kind=reference", async () => {
     render(<EnvPage />)
-    fireEvent.click(await screen.findByTestId("env-add-button"))
-    fireEvent.change(screen.getByTestId("env-name-input-0"), {
-      target: { value: "A" },
-    })
-    fireEvent.change(screen.getByTestId("env-value-input-0"), {
-      target: { value: "api" },
-    })
-
+    fireEvent.click(await screen.findByTestId("env-new-group-button"))
+    const group = (await screen.findAllByTestId(/^env-group-/))[0]
+    fireEvent.click(within(group).getByTestId("env-group-add-button"))
+    fireEvent.change(within(group).getByTestId("env-row-name-0"), { target: { value: "A" } })
+    fireEvent.change(within(group).getByTestId("env-row-value-0"), { target: { value: "$B" } })
     await waitFor(() => {
       const lastCall = invokeMock.mock.calls.at(-1)
       expect(lastCall?.[0]).toBe("set_env_overrides")
       expect(lastCall?.[1]).toEqual({
-        overrides: [{ name: "A", kind: "literal", value: "api" }],
+        overrides: [{ name: "A", kind: "reference", value: "B" }],
       })
     })
   })
 
-  it("removes a row when delete is clicked", async () => {
+  it("persists a $$ literal row to the backend as kind=literal value starting with $", async () => {
     render(<EnvPage />)
-    fireEvent.click(await screen.findByTestId("env-add-button"))
-    expect(screen.getByTestId("env-name-input-0")).toBeInTheDocument()
-    fireEvent.click(screen.getByTestId("env-remove-button-0"))
-    expect(screen.queryByTestId("env-name-input-0")).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByTestId("env-new-group-button"))
+    const group = (await screen.findAllByTestId(/^env-group-/))[0]
+    fireEvent.click(within(group).getByTestId("env-group-add-button"))
+    fireEvent.change(within(group).getByTestId("env-row-name-0"), { target: { value: "A" } })
+    fireEvent.change(within(group).getByTestId("env-row-value-0"), { target: { value: "$$B" } })
+    await waitFor(() => {
+      const lastCall = invokeMock.mock.calls.at(-1)
+      expect(lastCall?.[1]).toEqual({
+        overrides: [{ name: "A", kind: "literal", value: "$B" }],
+      })
+    })
   })
 })
