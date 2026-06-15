@@ -22,11 +22,11 @@ export function HubPage() {
   }, [refreshSources])
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="py-3 px-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Community Collection</h1>
-          <p className="text-xs text-muted-foreground">
+          <h1 className="text-lg font-semibold mb-0">Community Collection</h1>
+          <p className="text-sm text-muted-foreground mb-1">
             Browse the Community Collection to discover and install plugins.
           </p>
         </div>
@@ -71,7 +71,7 @@ export function HubPage() {
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               Existing
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-sm text-muted-foreground mb-1">
               ({localPlugins.length} plugin{localPlugins.length === 1 ? "" : "s"})
             </span>
           </header>
