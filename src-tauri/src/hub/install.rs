@@ -149,6 +149,12 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Public wrapper used by the Tauri command layer (e.g. when seeding a local
+/// path source's cache).
+pub fn copy_dir_to(src: &Path, dst: &Path) -> Result<(), InstallError> {
+    copy_dir_recursive(src, dst).map_err(|e| InstallError::Io(e.to_string()))
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct OrphanReport {
     pub removed_cache_dirs: Vec<String>,
@@ -220,15 +226,18 @@ mod sweep_tests {
     use std::fs;
 
     fn tempdir(label: &str) -> PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let suffix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "openusage-hub-sweep-{}-{}-{}",
+            "openusage-hub-sweep-{}-{}-{}-{}",
             label,
             std::process::id(),
-            suffix
+            suffix,
+            counter
         ));
         fs::create_dir_all(&path).unwrap();
         path
