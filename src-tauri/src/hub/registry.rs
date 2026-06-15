@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::hub::source::SourceKind;
 
 pub const CURRENT_VERSION: u32 = 1;
-pub const DEFAULT_UPSTREAM_URL: &str = "https://github.com/robinebers/openusage";
+pub const DEFAULT_UPSTREAM_URL: &str = "https://github.com/FrankieeW/openusage-plugin-hub";
 pub const DEFAULT_UPSTREAM_LABEL: &str = "Upstream (default)";
 pub const DEFAULT_UPSTREAM_ID: &str = "default-upstream";
 

@@ -135,8 +135,10 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
         let entry_path = entry.path();
-        let dest_path = dst.join(entry.file_name());
+        let dest_path = dst.join(&name);
         let ft = entry.file_type()?;
         if ft.is_symlink() {
             continue;
@@ -144,6 +146,13 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         if ft.is_dir() {
             copy_dir_recursive(&entry_path, &dest_path)?;
         } else if ft.is_file() {
+            if name_str.ends_with(".test.js")
+                || name_str.ends_with(".test.ts")
+                || name_str.ends_with(".test.tsx")
+                || name_str == "test-helpers.js"
+            {
+                continue;
+            }
             std::fs::copy(&entry_path, &dest_path)?;
         }
     }
