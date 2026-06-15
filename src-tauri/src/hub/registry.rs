@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use crate::hub::source::SourceKind;
 
 pub const CURRENT_VERSION: u32 = 1;
-pub const DEFAULT_UPSTREAM_URL: &str = "https://github.com/FrankieeW/openusage-plugin-hub";
-pub const DEFAULT_UPSTREAM_LABEL: &str = "Upstream (default)";
-pub const DEFAULT_UPSTREAM_ID: &str = "default-upstream";
+pub const DEFAULT_HUB_URL: &str = "https://github.com/FrankieeW/openusage-plugin-hub";
+pub const DEFAULT_HUB_LABEL: &str = "Default";
+pub const DEFAULT_HUB_ID: &str = "default";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Source {
@@ -51,9 +51,9 @@ pub fn default_registry() -> RegistryFile {
     RegistryFile {
         version: CURRENT_VERSION,
         sources: vec![Source {
-            id: DEFAULT_UPSTREAM_ID.into(),
-            label: DEFAULT_UPSTREAM_LABEL.into(),
-            url: DEFAULT_UPSTREAM_URL.into(),
+            id: DEFAULT_HUB_ID.into(),
+            label: DEFAULT_HUB_LABEL.into(),
+            url: DEFAULT_HUB_URL.into(),
             kind: SourceKind::Github,
             added_at: 0,
             last_refreshed_at: None,
@@ -148,10 +148,10 @@ mod tests {
         let file = read(&dir).expect("read should succeed");
         assert_eq!(file.version, CURRENT_VERSION);
         assert_eq!(file.sources.len(), 1);
-        assert_eq!(file.sources[0].url, DEFAULT_UPSTREAM_URL);
+        assert_eq!(file.sources[0].url, DEFAULT_HUB_URL);
         assert_eq!(file.sources[0].kind, SourceKind::Github);
-        assert_eq!(file.sources[0].label, DEFAULT_UPSTREAM_LABEL);
-        assert_eq!(file.sources[0].id, DEFAULT_UPSTREAM_ID);
+        assert_eq!(file.sources[0].label, DEFAULT_HUB_LABEL);
+        assert_eq!(file.sources[0].id, DEFAULT_HUB_ID);
         assert!(!file.sources[0].auto_check);
     }
 
@@ -181,7 +181,7 @@ mod tests {
         let file = read(&dir).expect("read should succeed");
         assert_eq!(file.version, CURRENT_VERSION);
         assert_eq!(file.sources.len(), 1);
-        assert_eq!(file.sources[0].url, DEFAULT_UPSTREAM_URL);
+        assert_eq!(file.sources[0].url, DEFAULT_HUB_URL);
         assert!(dir.join("sources.json.bak").exists());
     }
 
