@@ -37,8 +37,8 @@ export const hubCommands = {
     call<HubBrowseView>("hub_browse_source", { sourceId }),
   install: (sourceId: string, pluginId: string) =>
     call<void>("hub_install", { sourceId, pluginId }),
-  uninstall: (pluginId: string) =>
-    call<void>("hub_uninstall", { pluginId }),
+  uninstall: (pluginId: string, sourceId?: string) =>
+    call<void>("hub_uninstall", { pluginId, sourceId: sourceId ?? null }),
   refreshSource: (sourceId: string) =>
     call<HubBrowseView>("hub_refresh_source", { sourceId }),
   checkUpdates: () => call<UpdateInfo[]>("hub_check_updates"),

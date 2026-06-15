@@ -52,10 +52,16 @@ describe("hubCommands", () => {
     await expect(hubCommands.install("src-x", "foo")).rejects.toMatchObject(err)
   })
 
-  it("uninstall calls hub_uninstall with pluginId", async () => {
+  it("uninstall calls hub_uninstall with pluginId and sourceId", async () => {
+    invokeMock.mockResolvedValueOnce(undefined)
+    await hubCommands.uninstall("foo", "src-1")
+    expect(invokeMock).toHaveBeenCalledWith("hub_uninstall", { pluginId: "foo", sourceId: "src-1" })
+  })
+
+  it("uninstall calls hub_uninstall with pluginId and null sourceId", async () => {
     invokeMock.mockResolvedValueOnce(undefined)
     await hubCommands.uninstall("foo")
-    expect(invokeMock).toHaveBeenCalledWith("hub_uninstall", { pluginId: "foo" })
+    expect(invokeMock).toHaveBeenCalledWith("hub_uninstall", { pluginId: "foo", sourceId: null })
   })
 
   it("browseSource passes sourceId", async () => {

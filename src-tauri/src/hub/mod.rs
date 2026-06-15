@@ -363,6 +363,21 @@ pub fn derive_label_from_url(url: &str) -> String {
         .join("/")
 }
 
+/// Turn a source label into a safe directory-name component.
+pub fn sanitize_label(label: &str) -> String {
+    let mut out = String::with_capacity(label.len());
+    for c in label.chars() {
+        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+            out.push(c);
+        } else if c == ' ' || c == '\'' {
+            // collapse to nothing — "Frankie's" → "Frankies"
+        } else {
+            out.push('-');
+        }
+    }
+    out.to_lowercase()
+}
+
 // ---------------------------------------------------------------------------
 // Tauri command layer
 // ---------------------------------------------------------------------------
@@ -478,6 +493,25 @@ pub async fn hub_remove_source(
     if cache_path.exists() {
         let _ = std::fs::remove_dir_all(&cache_path);
     }
+    // Reclassify installed plugins from this source as local (unmanaged)
+    let plugins_dir = s.app_data_dir.join("plugins");
+    if plugins_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                if let Some(mut meta) = install::read_install_metadata(&plugins_dir, &dir_name) {
+                    if meta.source_id == source_id {
+                        meta.source_id = String::new();
+                        let _ = install::write_install_metadata(&plugins_dir, &dir_name, &meta);
+                    }
+                }
+            }
+        }
+    }
     s.hub_registry.sources.retain(|src| src.id != source_id);
     registry::write(&s.hub_dir, &s.hub_registry)?;
     Ok(())
@@ -542,7 +576,14 @@ pub async fn hub_install(
         (s.hub_dir.clone(), s.app_data_dir.join("plugins"), source)
     };
 
-    install::check_conflict(&plugins_dir, &plugin_id, &source_id)?;
+    let safe_label = sanitize_label(&source.label);
+    let install_dir_name = if safe_label.is_empty() || safe_label == "local" {
+        plugin_id.clone()
+    } else {
+        format!("{}__{}", plugin_id, safe_label)
+    };
+
+    install::check_conflict(&plugins_dir, &install_dir_name, &source_id)?;
 
     let source_plugin_dir = cache_dir_for(&hub_dir, &source_id)
         .join("plugins")
@@ -563,7 +604,7 @@ pub async fn hub_install(
         .unwrap_or("0.0.0")
         .to_string();
 
-    install::copy_plugin_to_install_dir(&source_plugin_dir, &plugins_dir, &plugin_id)?;
+    install::copy_plugin_to_install_dir(&source_plugin_dir, &plugins_dir, &install_dir_name)?;
     let metadata = install::InstallMetadata {
         source_id: source.id.clone(),
         source_url: source.url.clone(),
@@ -571,7 +612,7 @@ pub async fn hub_install(
         installed_version: version,
         installed_at: now_millis(),
     };
-    install::write_install_metadata(&plugins_dir, &metadata)?;
+    install::write_install_metadata(&plugins_dir, &install_dir_name, &metadata)?;
 
     reload_plugins_and_emit(&app, &state)?;
     report_orphans(&app, &state);
@@ -583,13 +624,41 @@ pub async fn hub_uninstall(
     app: AppHandle,
     state: State<'_, Mutex<crate::AppState>>,
     plugin_id: String,
+    source_id: Option<String>,
 ) -> Result<(), HubError> {
     {
         let s = lock_state(&state)?;
-        install::remove_installed_plugin(&s.app_data_dir.join("plugins"), &plugin_id)?;
+        let plugins_dir = s.app_data_dir.join("plugins");
+        let dir_name = if let Some(ref sid) = source_id {
+            // Per-source install: find dir by metadata match
+            find_install_dir(&plugins_dir, &plugin_id, sid)
+                .unwrap_or(plugin_id.clone())
+        } else {
+            plugin_id.clone()
+        };
+        install::remove_installed_plugin(&plugins_dir, &dir_name)?;
     }
     reload_plugins_and_emit(&app, &state)?;
     Ok(())
+}
+
+/// Walk plugins/ and return the directory name whose .openusage-install.json
+/// matches the given plugin_id + source_id.
+fn find_install_dir(plugins_dir: &Path, plugin_id: &str, source_id: &str) -> Option<String> {
+    let entries = std::fs::read_dir(plugins_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if let Some(meta) = install::read_install_metadata(plugins_dir, &entry.file_name().to_string_lossy())
+        {
+            if meta.plugin_id == plugin_id && meta.source_id == source_id {
+                return Some(entry.file_name().to_string_lossy().to_string());
+            }
+        }
+    }
+    None
 }
 
 #[tauri::command]

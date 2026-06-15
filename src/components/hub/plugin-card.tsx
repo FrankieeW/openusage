@@ -74,7 +74,7 @@ export function PluginBrowser({ sourceId, available, skipped }: PluginBrowserPro
             plugin={plugin}
             loading={loading}
             onInstall={() => install(sourceId, plugin.id)}
-            onUninstall={() => uninstall(plugin.id)}
+            onUninstall={() => uninstall(plugin.id, plugin.sourceId || undefined)}
           />
         ))}
       </div>

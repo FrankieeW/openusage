@@ -44,7 +44,7 @@ interface HubState {
   removeSource: (id: string) => Promise<void>
   refreshSource: (id: string) => Promise<HubBrowseView | null>
   install: (sourceId: string, pluginId: string) => Promise<void>
-  uninstall: (pluginId: string) => Promise<void>
+  uninstall: (pluginId: string, sourceId?: string) => Promise<void>
   clearError: () => void
   setHighlightedSource: (id: string | null) => void
 }
@@ -180,7 +180,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     }
   },
 
-  uninstall: async (pluginId) => {
+  uninstall: async (pluginId, sourceId) => {
     const key = `uninstall:${pluginId}`
     set((s) => ({
       loading: {
@@ -189,7 +189,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       },
     }))
     try {
-      await hubCommands.uninstall(pluginId)
+      await hubCommands.uninstall(pluginId, sourceId)
       // Mark uninstalled across all browsed sources
       set((s) => {
         const next: Record<string, HubBrowseView> = {}

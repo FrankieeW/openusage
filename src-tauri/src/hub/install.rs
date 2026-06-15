@@ -82,9 +82,10 @@ pub fn read_install_metadata(install_dir: &Path, plugin_id: &str) -> Option<Inst
 
 pub fn write_install_metadata(
     install_dir: &Path,
+    dir_name: &str,
     metadata: &InstallMetadata,
 ) -> Result<(), InstallError> {
-    let dir = install_dir.join(&metadata.plugin_id);
+    let dir = install_dir.join(dir_name);
     std::fs::create_dir_all(&dir).map_err(|e| InstallError::Io(e.to_string()))?;
     let path = dir.join(METADATA_FILENAME);
     let text = serde_json::to_string_pretty(metadata)
@@ -273,7 +274,7 @@ mod sweep_tests {
             installed_version: "0.6.27".into(),
             installed_at: 0,
         };
-        write_install_metadata(install_dir, &m).unwrap();
+        write_install_metadata(install_dir, plugin_id, &m).unwrap();
     }
 
     #[test]
@@ -443,7 +444,7 @@ mod tests {
             installed_version: "0.6.27".into(),
             installed_at: 1234567890,
         };
-        write_install_metadata(&dir, &m).unwrap();
+        write_install_metadata(&dir, "claude", &m).unwrap();
         let loaded = read_install_metadata(&dir, "claude").unwrap();
         assert_eq!(loaded, m);
         // Sidecar file is hidden-named and inside plugin dir
@@ -501,7 +502,7 @@ mod tests {
             installed_version: "0.6.27".into(),
             installed_at: 0,
         };
-        write_install_metadata(&dst, &m).unwrap();
+        write_install_metadata(&dst, "claude", &m).unwrap();
         assert!(check_conflict(&dst, "claude", "src-existing").is_ok());
     }
 
@@ -516,7 +517,7 @@ mod tests {
             installed_version: "0.6.27".into(),
             installed_at: 0,
         };
-        write_install_metadata(&dst, &m).unwrap();
+        write_install_metadata(&dst, "claude", &m).unwrap();
         assert_eq!(
             check_conflict(&dst, "claude", "src-new"),
             Err(InstallError::ConflictWithSource("src-existing".into())),
