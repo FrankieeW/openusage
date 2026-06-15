@@ -32,6 +32,7 @@ manually via **Add Source**.
 | Warp | https://github.com/JulianKniephoff/openusage/tree/feat/warp | ⚠️ Untested |
 | Multiple (incl. DeepSeek) | https://github.com/barramee27/crossusage | ⚠️ Untested |
 | OpenRouter | https://github.com/ExTV/openusage/tree/feat/openrouter-provider | ✅ Tested |
+| Pioneer | https://github.com/andrew54068/openusage/tree/feat/pioneer-plugin | ⚠️ Untested |
 
 ## Contributing
 
