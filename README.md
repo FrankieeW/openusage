@@ -1,30 +1,34 @@
 # OpenUsage.cc — Community Collection
 
-AI subscription tracker for macOS. See usage at a glance from your menu bar. Community-driven fork of [OpenUsage](https://github.com/robinebers/openusage).
+AI subscription tracker for macOS. See usage at a glance from your menu bar.
 
-![OpenUsage Screenshot](screenshot.png)
+Community-driven fork of [OpenUsage](https://github.com/robinebers/openusage) — more open, more sources, no rebuilds.
+
+## Install
+
+```fish
+brew install --cask frankieew/openusage/openusage-cc
+```
+
+Or [download the latest release](https://github.com/FrankieeW/openusage/releases/latest).
 
 ## What makes this different
 
-**Community Collection.** Subscribe to any plugin source — not just the bundled set. Discover, install, and update plugins from GitHub repos, git hosts, or local paths. No app rebuild required.
+**Community Collection.** Subscribe to any plugin source — GitHub repos, git hosts, or local paths. Discover, install, and update plugins without rebuilding the app.
 
-- **Plugin Hub.** Browse sources, pick plugins, install in one click. Plugins hot-reload without restarting.
-- **Local detection.** Existing plugins from an older OpenUsage install show up automatically under "Local" in the Hub.
-- **Multi-source.** Install the same provider from different sources — each gets its own entry.
-- **Everything upstream has.** All 17 providers, menu bar tracking, global shortcut, local HTTP API, proxy support.
-
-## Download
-
-[**Download the latest release**](https://github.com/FrankieeW/openusage/releases/latest) (macOS, Apple Silicon & Intel)
+- **Plugin Hub.** Browse sources, pick plugins, one-click install. Hot-reloads instantly.
+- **Local detection.** Existing plugins from an older install show up automatically.
+- **Multi-source.** Same provider from different sources? Each gets its own entry.
+- **Everything upstream.** All 17 providers, menu bar tracking, global shortcut, local HTTP API, proxy support.
 
 ## Supported Providers
 
-[17 providers](https://github.com/FrankieeW/openusage-collection) in the default collection — Claude, Codex, Copilot, Cursor, Devin, Grok, MiniMax, and more. Want more? Add any source that follows the [plugin schema](https://github.com/FrankieeW/openusage-collection#plugin-schema).
-
-## License
-
-MIT — inherited from upstream.
+Claude, Codex, Copilot, Cursor, Devin, Grok, MiniMax, and more — [browse the collection](https://github.com/FrankieeW/openusage-collection). Want a provider that's not listed? Publish a plugin or [add a source](https://github.com/FrankieeW/openusage-collection#publishing).
 
 ## Credits
 
 Forked from [OpenUsage](https://github.com/robinebers/openusage) by [@robinebers](https://github.com/robinebers). Built with [Tauri](https://tauri.app) + [React](https://react.dev).
+
+## License
+
+MIT
