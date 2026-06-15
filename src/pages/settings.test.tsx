@@ -44,7 +44,7 @@ vi.mock("@dnd-kit/utilities", () => ({
 import { SettingsPage } from "@/pages/settings"
 
 const defaultProps = {
-  plugins: [{ id: "a", name: "Alpha", enabled: true }],
+  plugins: [{ id: "a", name: "Alpha", enabled: true, sourceLabel: null, version: null }],
   onReorder: vi.fn(),
   onToggle: vi.fn(),
   autoUpdateInterval: 15 as const,
@@ -84,7 +84,7 @@ describe("SettingsPage", () => {
       <SettingsPage
         {...defaultProps}
         plugins={[
-          { id: "b", name: "Beta", enabled: false },
+          { id: "b", name: "Beta", enabled: false, sourceLabel: null, version: null },
         ]}
         onToggle={onToggle}
       />
@@ -100,8 +100,8 @@ describe("SettingsPage", () => {
       <SettingsPage
         {...defaultProps}
         plugins={[
-          { id: "a", name: "Alpha", enabled: true },
-          { id: "b", name: "Beta", enabled: true },
+          { id: "a", name: "Alpha", enabled: true, sourceLabel: null, version: null },
+          { id: "b", name: "Beta", enabled: true, sourceLabel: null, version: null },
         ]}
         onReorder={onReorder}
       />

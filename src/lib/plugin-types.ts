@@ -54,6 +54,8 @@ export type PluginMeta = {
   weeklyCandidate?: string
   /** Source label from Hub metadata, e.g. "Frankie's". null for unmanaged plugins. */
   sourceLabel?: string | null
+  /** Installed version from Hub install metadata. null for unmanaged plugins. */
+  version?: string | null
 }
 
 export type PluginDisplayState = {

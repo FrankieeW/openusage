@@ -225,6 +225,9 @@ pub struct PluginMeta {
     /// Human-readable source label (e.g. "Frankie's") from Hub metadata.
     /// None for unmanaged/local plugins.
     pub source_label: Option<String>,
+    /// Installed version read from the Hub install metadata (`installed_version`).
+    /// None for plugins installed outside the Hub (unmanaged / local).
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -607,6 +610,8 @@ pub fn plugins_to_meta(
                 primary_candidates,
                 weekly_candidate,
                 source_label: read_source_label(plugins_dir, &plugin.manifest.id),
+                version: hub::install::read_install_metadata(plugins_dir, &plugin.manifest.id)
+                    .map(|m| m.installed_version),
             }
         })
         .collect()

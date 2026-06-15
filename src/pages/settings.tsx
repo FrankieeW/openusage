@@ -45,6 +45,15 @@ interface PluginConfig {
   id: string;
   name: string;
   enabled: boolean;
+  sourceLabel: string | null;
+  version: string | null;
+}
+
+function sourceVersionLabel(sourceLabel: string | null, version: string | null): string | null {
+  if (sourceLabel && version) return `${sourceLabel} · v${version}`;
+  if (sourceLabel) return sourceLabel;
+  if (version) return `v${version}`;
+  return null;
 }
 
 const TRAY_PREVIEW_SIZE_PX = getTrayIconSizePx(1);
@@ -240,13 +249,13 @@ function SortablePluginItem({
         <GripVertical className="h-4 w-4" />
       </button>
 
-      <span
-        className={cn(
-          "flex-1 text-sm",
-          !plugin.enabled && "text-muted-foreground"
+      <span className="flex-1 text-sm flex flex-col">
+        <span className={cn(!plugin.enabled && "text-muted-foreground")}>{plugin.name}</span>
+        {sourceVersionLabel(plugin.sourceLabel, plugin.version) && (
+          <span className="text-xs text-muted-foreground">
+            {sourceVersionLabel(plugin.sourceLabel, plugin.version)}
+          </span>
         )}
-      >
-        {plugin.name}
       </span>
 
       {/* Wrap to stop Base UI's internal input.click() from bubbling to the row div */}
