@@ -47,13 +47,10 @@ fn set_stored_log_level(app_handle: &AppHandle, level: log::LevelFilter) {
 }
 
 pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
-    log::info!("tray: resolving icon path...");
     let tray_icon_path = app_handle
         .path()
         .resolve("icons/tray-icon.png", BaseDirectory::Resource)?;
-    log::info!("tray: icon path resolved to {}", tray_icon_path.display());
-    let icon = Image::from_path(&tray_icon_path)?;
-    log::info!("tray: icon loaded OK from {}", tray_icon_path.display());
+    let icon = Image::from_path(tray_icon_path)?;
 
     // Load persisted log level
     let current_level = get_stored_log_level(app_handle);
@@ -157,9 +154,8 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
-    TrayIconBuilder::with_id("tray")
+    let tray = TrayIconBuilder::with_id("tray")
         .icon(icon)
-        .icon_as_template(false)
         .tooltip("OpenUsage")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -240,9 +236,7 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                 }
             }
         })
-        .build(app_handle)
-    .inspect_err(|e| log::error!("tray: build failed: {}", e))?;
+        .build(app_handle)?;
 
-    log::info!("tray icon created successfully");
     Ok(())
 }
