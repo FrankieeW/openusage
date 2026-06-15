@@ -109,20 +109,6 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
         plugin.unmanaged && "border-dashed",
       )}
     >
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-muted">
-        {plugin.iconDataUrl ? (
-          <img
-            src={plugin.iconDataUrl}
-            alt=""
-            className="h-6 w-6"
-          />
-        ) : (
-          <span
-            className="h-4 w-4 rounded-sm"
-            style={{ backgroundColor: plugin.brandColor ?? "#888" }}
-          />
-        )}
-      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{plugin.name}</span>
