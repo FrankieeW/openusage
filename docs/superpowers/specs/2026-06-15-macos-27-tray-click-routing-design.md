@@ -36,14 +36,14 @@ The user observes the menu, not the panel. Right-clicking still works because th
 
 ## Approach
 
-We move click routing off the `NSStatusItem`'s built-in target/action mechanism and onto the `TaoTrayTarget` subview exclusively. The `NSButton` becomes a "dumb" container — its `target`/`action` is cleared, and the menu is detached. Both left- and right-click then travel through the subview's existing handlers; the subview already calls `send_mouse_event` for `mouseUp:` on both buttons, so we receive a `TrayIconEvent::Click { button, button_state, .. }` for both, and we can drive both behaviors from a single `on_tray_icon_event` closure:
+We move click routing off the `NSStatusItem`'s built-in target/action mechanism and onto the `TaoTrayTarget` subview exclusively. The `NSButton` becomes a "dumb" container — its `target` and `action` are cleared, but the menu stays attached. Both left- and right-click then travel through the subview's existing handlers; the subview already calls `send_mouse_event` for `mouseUp:` on both buttons, so we receive a `TrayIconEvent::Click { button, button_state, .. }` for both, and we can drive both behaviors from a single `on_tray_icon_event` closure:
 
 - `Left + Up` → `show_panel(...)` (existing behavior, unchanged).
-- `Right + Up` → manually pop up the menu using `[NSButton popUpStatusItemMenu:]` via objc2 (new behavior; replaces the path that the system used to handle for us).
+- `Right + Up` → manually pop up the menu. We get the menu on demand via `NSStatusItem::menu(mtm)` (returns `Option<Retained<NSMenu>>` from `objc2_app_kit 0.3.2`) and pass it to `[NSButton popUpStatusItemMenu:]` via objc2. This replaces the path that the system used to handle for us.
 
-The `menu_on_left_click` / `menu_on_right_click` flags in `tray-icon` become irrelevant because we never call `ns_button.performClick` ourselves — the performClick is what those flags gate, and we're not gating anymore, we're bypassing.
+The `menu_on_left_click` / `menu_on_right_click` flags in `tray-icon` become irrelevant because clearing the button's `action` makes `ns_button.performClick` a no-op (it has nothing to fire). We're not gating the pop-up anymore, we're bypassing the system's auto-pop path entirely.
 
-The `on_menu_event` closure that already handles `show_stats`, `go_to_settings`, `log_*`, `copy_log_path`, `about`, `quit` is **untouched** — muda's menu-event delivery is independent of the pop-up mechanism and continues to work.
+The `on_menu_event` closure that already handles `show_stats`, `go_to_settings`, `log_*`, `copy_log_path`, `about`, `quit` is **untouched** — muda's menu-event delivery is independent of the pop-up mechanism and continues to work. The menu stays attached to the `NSStatusItem` (so muda's delegate wiring is preserved) but never auto-opens.
 
 ### Why we don't lose the right-click path
 
@@ -59,39 +59,50 @@ All changes in `src-tauri/src/tray.rs`. `#[cfg(target_os = "macos")]` blocks; no
 
 ### 1. Build the tray with the menu attached (unchanged)
 
-Keep `.menu(&menu)` on the `TrayIconBuilder`. The crate will still call `NSStatusItem.setMenu(menu)` internally, which is what wires the button's target/action in the first place — we need that wiring to exist briefly so the menu ends up where `tray-icon` stores it (`TrayTargetIvars.menu`), because we read it back in the next step.
+Keep `.menu(&menu)` on the `TrayIconBuilder`. `tray-icon` will call `NSStatusItem.setMenu(menu)` internally, attaching the menu. We deliberately leave the menu attached; we only need to suppress the auto-pop behavior (see §2). The menu being attached also keeps muda's event-delivery wiring live for the existing `on_menu_event` closure.
 
-### 2. Capture the `NSMenu` retain *before* the builder consumes the menu, then override the wiring after `build()`
+### 2. After `build()`, clear the button's `target` and `action` via `with_inner_tray_icon`
 
-`tray-icon`'s `TrayIcon` struct keeps its `attrs` field private (mod.rs line 28), so we can't pull the `NSMenu` back out of the built tray. Instead, the `tauri::menu::Menu` we pass to `TrayIconBuilder::menu(...)` is borrowed (the builder signature is `fn menu<M: ContextMenu>(self, menu: &M)`), so our local `menu` value is still valid in `tray::create()` after `build()` returns. We extract the raw `NSMenu` pointer from it via the muda `ContextMenu::ns_menu` method (muda 0.19.1 line 455) and turn it into a `Retained<NSMenu>`:
+We do **not** detach the menu. The two operations we perform:
+
+- `button.setTarget(None)` — clear the target.
+- `button.setAction(None)` — clear the action. This is the line that fixes the regression. With action cleared, `ns_button.performClick(...)` (which the subview's `on_tray_click` calls for right-clicks) becomes a no-op, and macOS 27's new behavior of firing the button's action on left-click has nothing to fire.
+
+We do **not** call `status.setMenu(None)`. Detaching would force us to retain the `NSMenu` ourselves (because we need it for the manual right-click pop-up); since `objc2_app_kit 0.3.2`'s `NSStatusItem` already exposes `pub fn menu(&self, mtm: MainThreadMarker) -> Option<Retained<NSMenu>>` (generated/NSStatusItem.rs:67-69), we can re-query the menu on demand at right-click time and avoid the retain entirely.
 
 ```rust
+let tray = TrayIconBuilder::with_id("tray")
+    .icon(icon)
+    .tooltip("OpenUsage")
+    .menu(&menu)
+    .show_menu_on_left_click(false)
+    .on_menu_event(/* ... existing closure, unchanged ... */)
+    .on_tray_icon_event(/* ... new closure, see §3 ... */)
+    .build(app_handle)?;
+
+// macOS 27 click-routing override (issue #573):
+// In macOS 27 Beta 1, NSStatusItem.button fires its target/action on
+// left-click, opening the attached menu before the TaoTrayTarget subview's
+// click handler can gate it. Clearing the button's target/action makes
+// performClick a no-op, restoring left-click → panel routing. The menu
+// stays attached so muda's event wiring and on_menu_event continue to
+// work, and so we can pull it back out via NSStatusItem.menu(mtm) on
+// right-click for the manual pop-up.
+//
+// To be removed when tauri-apps/tray-icon lands an upstream fix.
 #[cfg(target_os = "macos")]
-let ns_menu_retain: Retained<objc2_app_kit::NSMenu> = {
-    let raw = menu.ns_menu() as *mut NSMenu;
-    unsafe { Retained::retain(raw) }.ok_or_else(|| tauri::Error::NSPanelError)?
-};
-
-// ... build the tray with .menu(&menu) as today ...
-
-#[cfg(target_os = "macos")]
-let _ = tray.with_inner_tray_icon(|inner| {
-    let Some(status) = inner.ns_status_item() else { return; };
-    unsafe {
-        let button = status.button(inner.mtm()).unwrap();
-
-        // The three lines that fix the regression.
-        status.setMenu(None);
-        button.setTarget(None);
-        button.setAction(None);
-    }
-});
-log::info!("Applied macOS 27 click-routing override");
+{
+    let _ = tray.with_inner_tray_icon(|inner| {
+        let Some(status) = inner.ns_status_item() else { return; };
+        unsafe {
+            let button = status.button(inner.mtm()).unwrap();
+            button.setTarget(None);
+            button.setAction(None);
+        }
+    });
+    log::info!("Applied macOS 27 click-routing override");
+}
 ```
-
-The exact objc2_app_kit method-name spellings (`setMenu`, `setTarget`, `setAction`, `button(mtm)`) are confirmed by `objc2_app_kit 0.3` exposing them on the `NSStatusItem` and `NSButton` types; minor signature differences (e.g. `Option<&NSObject>` for target) will be reconciled at implementation.
-
-The retained `NSMenu` is moved into the `on_tray_icon_event` closure by cloning the `Retained` (which bumps the retain count and is cheap).
 
 ### 3. Pop the menu on right-click in `on_tray_icon_event`
 
@@ -106,25 +117,29 @@ The retained `NSMenu` is moved into the `on_tray_icon_event` closure by cloning 
             show_panel(tray.app_handle());
         }
         MouseButton::Right => {
+            // macOS 27 click-routing override (issue #573): with the
+            // button's action cleared (§2), the OS no longer pops the
+            // menu automatically on right-click. Drive the pop-up
+            // ourselves by pulling the still-attached menu from the
+            // status item and showing it via popUpStatusItemMenu:.
             #[cfg(target_os = "macos")]
             {
-                let menu_retain = menu_retain.clone();
-                let _ = tray.with_inner_tray_icon(move |inner| {
-                    if let Some(status) = inner.ns_status_item() {
-                        unsafe {
-                            let button = status.button(inner.mtm()).unwrap();
-                            let _: () = msg_send![&button, popUpStatusItemMenu: &*menu_retain];
-                        }
+                let _ = tray.with_inner_tray_icon(|inner| {
+                    let Some(status) = inner.ns_status_item() else { return; };
+                    unsafe {
+                        let Some(menu) = status.menu(inner.mtm()) else { return; };
+                        let button = status.button(inner.mtm()).unwrap();
+                        let _: () = msg_send![&button, popUpStatusItemMenu: &*menu];
                     }
                 });
             }
         }
-        _ => {}
+        MouseButton::Middle => {}
     }
 })
 ```
 
-`popUpStatusItemMenu:` is an `NSStatusItem`/`NSButton` method that displays the menu at the status item's screen position. It does not depend on `target`/`action`; it just shows the menu. This is exactly the system-call the button's wired action used to make.
+`popUpStatusItemMenu:` is an `NSButton` method (inherited from `NSStatusBarButton` / `NSStatusItem`) that displays the menu at the status item's screen position. It does not depend on `target`/`action`; it just shows the menu. This is exactly the system-call the button's wired action used to make.
 
 ### 4. Log a one-time info message
 
@@ -142,9 +157,9 @@ The retained `NSMenu` is moved into the `on_tray_icon_event` closure by cloning 
 ## Risks
 
 1. **`with_inner_tray_icon` lifecycle.** Tauri 2.11.2 documents that the closure runs on the main thread and that the recommended practice is to pin a Tauri minor. We're not pinning — if a future 2.12 changes the closure's return semantics, the override step could break. Mitigation: the fix is small and self-contained; reverting it is one file.
-2. **objc2_app_kit API drift.** `NSStatusItem.setMenu`, `NSButton.setTarget`, `NSButton.setAction`, and `NSButton.popUpStatusItemMenu:` are all stable AppKit since macOS 10.0; we are not relying on macOS 27-specific symbols. The objc2 Rust bindings are the only moving piece.
+2. **objc2_app_kit API drift.** `NSButton.setTarget`, `NSButton.setAction`, `NSStatusItem.menu`, and `popUpStatusItemMenu:` are all stable AppKit since macOS 10.0; we are not relying on macOS 27-specific symbols. The objc2 Rust bindings are the only moving piece. We confirmed `NSStatusItem.menu(mtm)` is exposed in `objc2-app-kit 0.3.2` (generated/NSStatusItem.rs:67-69).
 3. **Right-click menu visual position.** The system path used to display the menu at the status item's button; `popUpStatusItemMenu:` does the same. If a future macOS release changes the visual placement, we notice and re-evaluate. Not a 27-Beta-1-specific risk.
-4. **Concurrent clicks on the same icon.** `with_inner_tray_icon` queues onto the main thread, and `Retained::clone` is `Send`. The closure-captured `Retained<NSMenu>` is fine for cross-thread possession.
+4. **Concurrent clicks on the same icon.** `with_inner_tray_icon` queues onto the main thread; the per-click `Retained<NSMenu>` returned by `status.menu(mtm)` is dropped at the end of the right-click arm. No cross-thread state, no global storage.
 5. **Lost work if the upstream `tauri-apps/tray-icon` lands a fix.** When the upstream crate patches this properly (likely an `update_tracking_areas` / `hitTest` change in `TaoTrayTarget`), we can revert this whole block. Marked with a comment pointing to issue #573 so the future-us knows the context.
 
 ## Testing
@@ -168,6 +183,5 @@ This is a macOS-runtime behavior fix. The unit-test surface in this repo (`vites
 
 - (Resolved) Whether `tray.ns_status_item()` is reachable via the public Tauri 2 `Tray` API. **Yes**, via `with_inner_tray_icon` (tauri 2.11.2 line 633).
 - (Resolved) Whether the fix can live entirely in `tray.rs`. **Yes**; no upstream crate fork required.
-- (Resolved) How to obtain the `NSMenu` retain across the `build()` boundary. **By retaining from our local `tauri::menu::Menu` before `build()` consumes the borrow** — muda 0.19.1's `ContextMenu::ns_menu` returns the raw `*mut c_void`; `Retained::retain` upgrades it to a reference-counted handle independent of the builder's internal storage.
-- (Open, deferred to implementation) Exact objc2_app_kit method-name spellings on `NSStatusItem` and `NSButton` — `setMenu(Option<&NSMenu>)`, `setTarget(Option<&NSObject>)`, `setAction(Option<Sel>)`. Standard AppKit, present in `objc2_app_kit 0.3`, but the Rust signatures need to be matched at the call site.
-- (Open, deferred to implementation) Whether `popUpStatusItemMenu:` on `NSButton` is the right selector, or whether `NSMenu.popUpMenuPositioningItem:atLocation:inView:` is preferred. TBD at implementation; both are stable AppKit and produce the same on-screen result.
+- (Resolved) How to obtain the `NSMenu` for the right-click pop-up. **By re-querying `NSStatusItem.menu(mtm)` at click time** (objc2_app_kit 0.3.2 generated/NSStatusItem.rs:67-69 returns `Option<Retained<NSMenu>>`). No retain storage, no dependency on `tauri::menu::Menu`'s private `attrs` field, no need to add `muda` as a direct dep.
+- (Open, deferred to implementation) Exact `NSButton::setTarget` / `setAction` signatures from `objc2_app_kit 0.3` (probably `Option<&NSObject>` for target, `Option<Sel>` for action). Standard AppKit; the call site will need minor adaptation if the Rust signatures differ.
