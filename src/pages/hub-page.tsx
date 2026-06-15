@@ -25,9 +25,9 @@ export function HubPage() {
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Plugin Hub</h1>
+          <h1 className="text-xl font-semibold">Community Collection</h1>
           <p className="text-xs text-muted-foreground">
-            Subscribe to sources and install plugins without rebuilding the app.
+            Browse the Community Collection to discover and install plugins.
           </p>
         </div>
         <Button

@@ -254,7 +254,7 @@ export function SideNav({
       <NavButton
         isActive={activeView === "hub"}
         onClick={() => onViewChange("hub")}
-        aria-label="Plugin Hub"
+        aria-label="Collection"
         data-testid="nav-hub"
       >
         <Package className="size-6" />

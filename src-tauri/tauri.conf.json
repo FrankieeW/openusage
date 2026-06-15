@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OpenUsage",
+  "productName": "OpenUsage.cc",
   "version": "0.6.27",
-  "identifier": "com.sunstory.openusage",
+  "identifier": "com.sunstory.openusage.cc",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
