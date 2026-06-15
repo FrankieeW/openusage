@@ -633,32 +633,23 @@ pub async fn hub_uninstall(
     {
         let s = lock_state(&state)?;
         let plugins_dir = s.plugins_dir.clone();
-        let dir_name = if let Some(ref sid) = source_id {
-            match find_install_dir(&plugins_dir, &plugin_id, sid) {
-                Some(d) => {
-                    log::info!("hub_uninstall: found dir {} for {}/{}", d, plugin_id, sid);
-                    d
-                }
-                None => {
-                    // Fallback: try plain plugin_id for Local/manual installs
-                    let plain = plugins_dir.join(&plugin_id);
-                    if plain.join(install::METADATA_FILENAME).exists() {
-                        log::info!(
-                            "hub_uninstall: using plain dir {} for {}/{}",
-                            plugin_id, plugin_id, sid
-                        );
-                        plugin_id.clone()
-                    } else {
-                        log::warn!(
-                            "hub_uninstall: no install dir found for {}/{}, removing {} anyway",
-                            plugin_id, sid, plugin_id
-                        );
-                        plugin_id.clone()
-                    }
-                }
+        let dir_name = {
+            // Try metadata-based lookup first (handles per-source dir naming)
+            let found = find_install_dir(&plugins_dir, &plugin_id, source_id.as_deref().unwrap_or(""));
+            if let Some(d) = found {
+                log::info!("hub_uninstall: found dir {} for {}", d, plugin_id);
+                d
+            } else if plugins_dir.join(&plugin_id).is_dir() {
+                // Plain directory (local / unmanaged / pre-Hub install)
+                log::info!("hub_uninstall: using plain dir {}", plugin_id);
+                plugin_id.clone()
+            } else {
+                log::warn!(
+                    "hub_uninstall: no dir found for {}, removing anyway",
+                    plugin_id
+                );
+                plugin_id.clone()
             }
-        } else {
-            plugin_id.clone()
         };
         install::remove_installed_plugin(&plugins_dir, &dir_name)?;
     }
@@ -688,7 +679,8 @@ fn find_install_dir(plugins_dir: &Path, plugin_id: &str, source_id: &str) -> Opt
                     "find_install_dir: dir={} meta.plugin_id={} meta.source_id={}",
                     dir_name, meta.plugin_id, meta.source_id
                 );
-                if meta.plugin_id == plugin_id && meta.source_id == source_id {
+                let source_matches = source_id.is_empty() || meta.source_id == source_id;
+                if meta.plugin_id == plugin_id && source_matches {
                     return Some(dir_name);
                 }
             }
