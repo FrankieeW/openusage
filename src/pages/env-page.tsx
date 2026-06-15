@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Check, Plus, Save, Trash2 } from "lucide-react"
+import { Check, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEnvOverridesStore } from "@/stores/env-overrides-store"
 
@@ -78,25 +78,25 @@ export function EnvPage() {
             .
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2">
           <Button
             size="sm"
             variant={saved ? "secondary" : "default"}
             onClick={handleSave}
             disabled={saving}
-            data-testid="env-save-button"
+            data-testid="env-reload-button"
           >
             {saving ? (
-              "Saving…"
+              "Reloading…"
             ) : saved ? (
               <>
                 <Check size={14} />
-                Saved
+                Reloaded
               </>
             ) : (
               <>
-                <Save size={14} />
-                Save
+                <RefreshCw size={14} />
+                Reload
               </>
             )}
           </Button>

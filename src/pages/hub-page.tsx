@@ -2,7 +2,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { initHubSubscriptions, useHubStore } from "@/lib/hub/cache"
 import { labelForError } from "@/lib/hub/labels"
-import { AlertCircle, Plus } from "lucide-react"
+import { AlertCircle, Plus, RefreshCw } from "lucide-react"
 import { useEffect, useState } from "react"
 import { SourceCard } from "@/components/hub/source-card"
 import { AddSourceDialog } from "@/components/hub/add-source-dialog"
@@ -30,14 +30,25 @@ export function HubPage() {
             Browse the Community Collection to discover and install plugins.
           </p>
         </div>
-        <Button
-          size="sm"
-          onClick={() => setAdding(true)}
-          data-testid="hub-add-source-button"
-        >
-          <Plus size={14} />
-          Add Source
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => window.location.reload()}
+            data-testid="hub-reload-button"
+          >
+            <RefreshCw size={14} />
+            Reload
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setAdding(true)}
+            data-testid="hub-add-source-button"
+          >
+            <Plus size={14} />
+            Add Source
+          </Button>
+        </div>
       </div>
 
       {error && (
