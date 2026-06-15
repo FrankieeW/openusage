@@ -1,6 +1,8 @@
 import { create } from "zustand"
 import { listen } from "@tauri-apps/api/event"
 
+import type { PluginMeta } from "@/lib/plugin-types"
+import { useAppPluginStore } from "@/stores/app-plugin-store"
 import { hubCommands } from "./commands"
 import type {
   HubBrowseView,
@@ -256,8 +258,10 @@ export async function initHubSubscriptions() {
   subscribed = true
 
   try {
-    await listen<unknown[]>("plugins-changed", () => {
-      // Re-fetch sources to reflect any new install/uninstall
+    await listen<PluginMeta[]>("plugins-changed", (event) => {
+      // Update sidebar + settings page immediately, no restart needed
+      useAppPluginStore.getState().setPluginsMeta(event.payload)
+      // Refresh Hub source list too
       void useHubStore.getState().refreshSources()
     })
     await listen<{
