@@ -456,9 +456,17 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
         locked.plugins.clone()
     };
     log::debug!("list_plugins: {} plugins", plugins.len());
+    plugins_to_meta(&plugins)
+}
 
+/// Build the JS-facing PluginMeta list from the loaded Rust plugins.
+/// Shared by `list_plugins` and `hub::reload_plugins_and_emit` so hot-reload
+/// stays byte-identical to the initial probe.
+pub fn plugins_to_meta(
+    plugins: &[plugin_engine::manifest::LoadedPlugin],
+) -> Vec<PluginMeta> {
     plugins
-        .into_iter()
+        .iter()
         .map(|plugin| {
             // Extract primary candidates: progress lines with primary_order, sorted by order
             let mut candidates: Vec<_> = plugin
@@ -477,10 +485,10 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
                     .map(str::to_string);
 
             PluginMeta {
-                id: plugin.manifest.id,
-                name: plugin.manifest.name,
-                icon_url: plugin.icon_data_url,
-                brand_color: plugin.manifest.brand_color,
+                id: plugin.manifest.id.clone(),
+                name: plugin.manifest.name.clone(),
+                icon_url: plugin.icon_data_url.clone(),
+                brand_color: plugin.manifest.brand_color.clone(),
                 lines: plugin
                     .manifest
                     .lines
