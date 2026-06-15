@@ -626,6 +626,10 @@ pub async fn hub_uninstall(
     plugin_id: String,
     source_id: Option<String>,
 ) -> Result<(), HubError> {
+    log::info!(
+        "hub_uninstall ENTER: plugin_id={} source_id={:?}",
+        plugin_id, source_id
+    );
     {
         let s = lock_state(&state)?;
         let plugins_dir = s.plugins_dir.clone();
