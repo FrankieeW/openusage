@@ -159,7 +159,7 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
-    TrayIconBuilder::with_id("tray")
+    let tray = TrayIconBuilder::with_id("tray")
         .icon(icon)
         .tooltip("OpenUsage")
         .menu(&menu)
@@ -242,6 +242,37 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app_handle)?;
+
+    // macOS 27 click-routing override (issue #573):
+    // In macOS 27 Beta 1, NSStatusItem.button now fires its target/action on
+    // left-click, bypassing the TaoTrayTarget subview's menu_on_left_click
+    // flag and opening the attached menu before our click handler runs.
+    // Fix: clear the button's target and action so performClick is a no-op
+    // and the subview's mouseUp: -> on_tray_icon_event path becomes the
+    // sole click router. The menu stays attached (so muda's event wiring
+    // and the existing on_menu_event continue to work), and we pull it back
+    // out via NSStatusItem.menu(mtm) in the right-click pop-up path.
+    //
+    // To be removed when tauri-apps/tray-icon lands an upstream fix.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = tray.with_inner_tray_icon(|inner| {
+            let Some(status) = inner.ns_status_item() else {
+                return;
+            };
+            // with_inner_tray_icon runs the closure on the main thread
+            // (see tauri 2.11.2 src/tray/mod.rs `run_item_main_thread!`),
+            // so constructing a MainThreadMarker here is sound.
+            let mtm = objc2_foundation::MainThreadMarker::new()
+                .expect("with_inner_tray_icon closure must run on the main thread");
+            unsafe {
+                let button = status.button(mtm).unwrap();
+                button.setTarget(None);
+                button.setAction(None);
+            }
+        });
+        log::info!("Applied macOS 27 click-routing override");
+    }
 
     Ok(())
 }
