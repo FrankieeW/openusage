@@ -5,6 +5,7 @@ import {
   saveEnvGroups,
   loadActiveGroupIds,
   saveActiveGroupIds,
+  saveEnvOverridesLegacy,
   parseValueInput,
   type EnvGroup,
   type EnvOverride,
@@ -85,6 +86,7 @@ function scheduleSync(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }
     pendingSnapshot = null
     persistTimer = null
     if (!toSync) return
+    const flattened = flattenGroups(toSync.groups, toSync.activeGroupIds)
     void (async () => {
       try {
         await saveEnvGroups(toSync.groups)
@@ -96,11 +98,14 @@ function scheduleSync(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }
       } catch (e) {
         console.error("Failed to save active group ids:", e)
       }
+      try {
+        await saveEnvOverridesLegacy(flattened)
+      } catch (e) {
+        console.error("Failed to save legacy env overrides:", e)
+      }
       if (!isTauri()) return
       try {
-        await invoke("set_env_overrides", {
-          overrides: flattenGroups(toSync.groups, toSync.activeGroupIds),
-        })
+        await invoke("set_env_overrides", { overrides: flattened })
       } catch (e) {
         console.error("Failed to sync env overrides:", e)
       }
@@ -114,6 +119,7 @@ function syncNow(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }): Pr
     persistTimer = null
     pendingSnapshot = null
   }
+  const flattened = flattenGroups(snapshot.groups, snapshot.activeGroupIds)
   return (async () => {
     try {
       await saveEnvGroups(snapshot.groups)
@@ -125,11 +131,14 @@ function syncNow(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }): Pr
     } catch (e) {
       console.error("Failed to save active group ids:", e)
     }
+    try {
+      await saveEnvOverridesLegacy(flattened)
+    } catch (e) {
+      console.error("Failed to save legacy env overrides:", e)
+    }
     if (!isTauri()) return
     try {
-      await invoke("set_env_overrides", {
-        overrides: flattenGroups(snapshot.groups, snapshot.activeGroupIds),
-      })
+      await invoke("set_env_overrides", { overrides: flattened })
     } catch (e) {
       console.error("Failed to sync env overrides:", e)
     }

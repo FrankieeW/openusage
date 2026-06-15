@@ -133,3 +133,12 @@ export async function saveActiveGroupIds(ids: string[]): Promise<void> {
   await settingsStore.set(ENV_ACTIVE_KEY, ids)
   await settingsStore.save()
 }
+
+/** Write flattened overrides to the legacy key so the Rust startup path
+ *  (`apply_env_overrides`) can load them before the frontend boots. */
+export async function saveEnvOverridesLegacy(
+  overrides: { name: string; kind: string; value: string }[],
+): Promise<void> {
+  await settingsStore.set(LEGACY_ENV_OVERRIDES_KEY, overrides)
+  await settingsStore.save()
+}
