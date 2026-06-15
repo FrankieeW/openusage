@@ -31,6 +31,7 @@ manually via **Add Source**.
 | Zed AI | https://github.com/rohithgoud30/openusage/tree/add-zed-ai-support | ⚠️ Untested |
 | Warp | https://github.com/JulianKniephoff/openusage/tree/feat/warp | ⚠️ Untested |
 | Multiple (incl. DeepSeek) | https://github.com/barramee27/crossusage | ⚠️ Untested |
+| OpenRouter | https://github.com/ExTV/openusage/tree/feat/openrouter-provider | ✅ Tested |
 
 ## Contributing
 
