@@ -9,8 +9,6 @@ use tauri_plugin_store::StoreExt;
 
 #[cfg(target_os = "macos")]
 use objc2::msg_send;
-#[cfg(target_os = "macos")]
-use objc2_app_kit::NSMenu;
 
 use crate::log_path;
 use crate::panel::{get_or_init_panel, position_panel_at_tray_icon, show_panel};
@@ -216,29 +214,58 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                 _ => {}
             }
         })
-        .on_tray_icon_event(|tray, event| {
-            let app_handle = tray.app_handle();
-
-            if let TrayIconEvent::Click {
-                button_state, rect, ..
+        .on_tray_icon_event(move |tray, event| {
+            let TrayIconEvent::Click {
+                button, button_state, rect, ..
             } = event
-            {
-                if button_state == MouseButtonState::Up {
+            else {
+                return;
+            };
+            if button_state != MouseButtonState::Up {
+                return;
+            }
+
+            match button {
+                MouseButton::Left => {
+                    let app_handle = tray.app_handle();
                     let Some(panel) = get_or_init_panel!(app_handle) else {
                         return;
                     };
-
                     if panel.is_visible() {
                         log::debug!("tray click: hiding panel");
                         panel.hide();
                         return;
                     }
                     log::debug!("tray click: showing panel");
-
-                    // macOS quirk: must show window before positioning to another monitor
                     panel.show_and_make_key();
                     position_panel_at_tray_icon(app_handle, rect.position, rect.size);
                 }
+                MouseButton::Right => {
+                    // macOS 27 click-routing override (issue #573): with the
+                    // button's action cleared (Task 2), the OS no longer pops
+                    // the menu automatically on right-click. Drive the pop-up
+                    // ourselves by pulling the still-attached menu from the
+                    // status item and showing it via popUpStatusItemMenu:.
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = tray.with_inner_tray_icon(|inner| {
+                            let mtm = objc2_foundation::MainThreadMarker::new()
+                                .expect("with_inner_tray_icon closure must run on the main thread");
+                            let Some(status) = inner.ns_status_item() else {
+                                return;
+                            };
+                            unsafe {
+                                let Some(menu) = status.menu(mtm) else {
+                                    return;
+                                };
+                                let button = status.button(mtm).unwrap();
+                                let _: () =
+                                    msg_send![&button, popUpStatusItemMenu: &*menu];
+                            }
+                        });
+                    }
+                }
+                MouseButton::Middle => {}
             }
         })
         .build(app_handle)?;
