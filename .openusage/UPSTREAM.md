@@ -8,19 +8,28 @@
 
 **Upstream version**: v0.6.27
 
-## How to sync future upstream changes
+## How to sync future upstream changes (PR workflow)
 
 ```fish
 # 1. Fetch latest upstream
 git fetch upstream main
 
-# 2. See what changed (replace 35f3188 with actual commit from above)
+# 2. See the diff
 git diff 35f3188..upstream/main
 
-# 3. Merge
-git merge upstream/main
+# 3. Create a sync branch from your main
+git checkout main
+git checkout -b sync/upstream-YYYY-MM-DD
 
-# 4. Update this file with the new commit hash and date
+# 4. Merge upstream into the sync branch
+git merge upstream/main --no-ff
+
+# 5. Push and open a PR on GitHub
+git push -u origin sync/upstream-YYYY-MM-DD
+# → Open PR: sync/upstream-YYYY-MM-DD → main
+# → Review diff, resolve conflicts, then merge via GitHub UI
+
+# 6. Update this file with the new upstream commit hash and date
 ```
 
 ## Fork-specific changes on top of upstream
