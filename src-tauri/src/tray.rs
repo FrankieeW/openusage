@@ -3,12 +3,11 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::path::BaseDirectory;
 use tauri::tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_nspanel::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_store::StoreExt;
 
 use crate::log_path;
-use crate::panel::{get_or_init_panel, position_panel_at_tray_icon, show_panel};
+use crate::panel::{hide_panel, is_panel_visible, show_panel};
 
 const LOG_LEVEL_STORE_KEY: &str = "logLevel";
 
@@ -215,24 +214,17 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
             let app_handle = tray.app_handle();
 
             if let TrayIconEvent::Click {
-                button_state, rect, ..
+                button_state, ..
             } = event
             {
                 if button_state == MouseButtonState::Up {
-                    let Some(panel) = get_or_init_panel!(app_handle) else {
-                        return;
-                    };
-
-                    if panel.is_visible() {
+                    if is_panel_visible(app_handle) {
                         log::debug!("tray click: hiding panel");
-                        panel.hide();
+                        hide_panel(app_handle);
                         return;
                     }
                     log::debug!("tray click: showing panel");
-
-                    // macOS quirk: must show window before positioning to another monitor
-                    panel.show_and_make_key();
-                    position_panel_at_tray_icon(app_handle, rect.position, rect.size);
+                    show_panel(app_handle);
                 }
             }
         })

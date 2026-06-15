@@ -85,9 +85,6 @@ macro_rules! get_or_init_panel {
     };
 }
 
-// Export macro for use in other modules
-pub(crate) use get_or_init_panel;
-
 /// Retrieve the tray icon rect and position the panel beneath it.
 /// No-ops gracefully if the tray icon or its rect is unavailable.
 fn position_panel_from_tray(app_handle: &AppHandle) {
@@ -261,7 +258,7 @@ pub fn position_panel_at_tray_icon(
     let panel_width = match (window.outer_size(), window.scale_factor()) {
         (Ok(s), Ok(win_scale)) => s.width as f64 / win_scale,
         _ => {
-            let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+            let conf: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json"))
                 .expect("tauri.conf.json must be valid JSON");
             conf["app"]["windows"][0]["width"]
                 .as_f64()
@@ -278,4 +275,19 @@ pub fn position_panel_at_tray_icon(
     let panel_y = (icon_logical_y + icon_logical_h - nudge_up).max(mon_logical_y);
 
     set_panel_top_left_immediately(&window, app_handle, panel_x, panel_y, primary_logical_h);
+}
+
+/// Hide the panel window (cross-platform API).
+pub fn hide_panel(app_handle: &AppHandle) {
+    if let Ok(panel) = app_handle.get_webview_panel("main") {
+        panel.hide();
+    }
+}
+
+/// Check whether the panel window is currently visible (cross-platform API).
+pub fn is_panel_visible(app_handle: &AppHandle) -> bool {
+    app_handle
+        .get_webview_panel("main")
+        .map(|p| p.is_visible())
+        .unwrap_or(false)
 }
