@@ -558,7 +558,8 @@ pub fn run() {
             hub::hub_install,
             hub::hub_uninstall,
             hub::hub_refresh_source,
-            hub::hub_check_updates
+            hub::hub_check_updates,
+            hub::hub_list_local_plugins
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

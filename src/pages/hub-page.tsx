@@ -6,12 +6,14 @@ import { AlertCircle, Plus } from "lucide-react"
 import { useEffect, useState } from "react"
 import { SourceCard } from "@/components/hub/source-card"
 import { AddSourceDialog } from "@/components/hub/add-source-dialog"
+import { PluginBrowser } from "@/components/hub/plugin-card"
 
 export function HubPage() {
   const sources = useHubStore((s) => s.sources)
   const error = useHubStore((s) => s.error)
   const clearError = useHubStore((s) => s.clearError)
   const refreshSources = useHubStore((s) => s.refreshSources)
+  const localPlugins = useHubStore((s) => s.localPlugins)
   const [adding, setAdding] = useState(false)
 
   useEffect(() => {
@@ -51,7 +53,7 @@ export function HubPage() {
         </Alert>
       )}
 
-      {sources.length === 0 && (
+      {sources.length === 0 && localPlugins.length === 0 && (
         <div
           data-testid="hub-empty-state"
           className="rounded-md border border-dashed border-border bg-muted/30 px-6 py-12 text-center"
@@ -60,6 +62,25 @@ export function HubPage() {
             No sources yet. Add a GitHub repo to browse plugins.
           </p>
         </div>
+      )}
+
+      {localPlugins.length > 0 && (
+        <section className="rounded-md border border-border bg-card">
+          <header className="flex items-center gap-3 px-4 py-3">
+            <span className="text-sm font-medium">Local</span>
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              Existing
+            </span>
+            <span className="text-xs text-muted-foreground">
+              ({localPlugins.length} plugin{localPlugins.length === 1 ? "" : "s"})
+            </span>
+          </header>
+          <PluginBrowser
+            sourceId="_local_"
+            available={localPlugins}
+            skipped={[]}
+          />
+        </section>
       )}
 
       <div className="space-y-3">

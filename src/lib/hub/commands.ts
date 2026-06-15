@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core"
 import type {
   HubBrowseView,
   HubError,
+  PluginInfo,
   Source,
   UpdateInfo,
 } from "./types"
@@ -41,4 +42,5 @@ export const hubCommands = {
   refreshSource: (sourceId: string) =>
     call<HubBrowseView>("hub_refresh_source", { sourceId }),
   checkUpdates: () => call<UpdateInfo[]>("hub_check_updates"),
+  listLocalPlugins: () => call<PluginInfo[]>("hub_list_local_plugins"),
 }

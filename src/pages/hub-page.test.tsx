@@ -62,11 +62,13 @@ describe("HubPage", () => {
     // mount-time refreshSources() doesn't wipe pre-seeded state.
     invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === "hub_list_sources") return useHubStore.getState().sources
+      if (cmd === "hub_list_local_plugins") return []
       if (cmd === "hub_browse_source") return sampleBrowse("s1")
       return undefined
     })
     useHubStore.setState({
       sources: [],
+      localPlugins: [],
       browseBySource: {},
       loading: { sources: false, perSource: {}, perPlugin: {} },
       error: null,

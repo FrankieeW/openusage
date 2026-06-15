@@ -5,6 +5,7 @@ import { hubCommands } from "./commands"
 import type {
   HubBrowseView,
   HubError,
+  PluginInfo,
   Source,
 } from "./types"
 
@@ -33,6 +34,7 @@ interface HubState {
   loading: LoadingState
   error: HubError | null
   highlightedSourceId: string | null
+  localPlugins: PluginInfo[]
 
   refreshSources: () => Promise<void>
   browseSource: (id: string, force?: boolean) => Promise<HubBrowseView | null>
@@ -64,12 +66,16 @@ export const useHubStore = create<HubState>((set, get) => ({
   loading: initialLoading,
   error: null,
   highlightedSourceId: null,
+  localPlugins: [],
 
   refreshSources: async () => {
     set((s) => ({ loading: { ...s.loading, sources: true } }))
     try {
-      const sources = await hubCommands.listSources()
-      set({ sources })
+      const [sources, localPlugins] = await Promise.all([
+        hubCommands.listSources(),
+        hubCommands.listLocalPlugins(),
+      ])
+      set({ sources, localPlugins })
     } catch (err) {
       set({ error: captureError(err) })
     } finally {

@@ -689,6 +689,77 @@ pub async fn hub_check_updates(
     Ok(updates)
 }
 
+/// Return plugins present in the install directory that have no Hub metadata.
+/// These are pre-existing plugins from an older OpenUsage version or manually
+/// copied directories — the Hub shows them under a virtual "Local" source.
+#[tauri::command]
+pub async fn hub_list_local_plugins(
+    state: State<'_, Mutex<crate::AppState>>,
+) -> Result<Vec<PluginInfo>, HubError> {
+    let plugins_dir = {
+        let s = lock_state(&state)?;
+        s.app_data_dir.join("plugins")
+    };
+    let mut locals = Vec::new();
+    if !plugins_dir.is_dir() {
+        return Ok(locals);
+    }
+    let entries = std::fs::read_dir(&plugins_dir).map_err(|e| HubError::io(e.to_string()))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let id = entry.file_name().to_string_lossy().to_string();
+        // Skip anything that already has Hub metadata — those belong to a Hub source
+        if install::read_install_metadata(&plugins_dir, &id).is_some() {
+            continue;
+        }
+        let manifest_path = path.join("plugin.json");
+        let Ok(text) = std::fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let name = value
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&id)
+            .to_string();
+        let version = value
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0.0.0")
+            .to_string();
+        let brand_color = value
+            .get("brandColor")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let icon_filename = value
+            .get("icon")
+            .and_then(|v| v.as_str())
+            .unwrap_or("icon.svg");
+        let icon_data_url = read_icon_data_url(&path, icon_filename);
+
+        locals.push(PluginInfo {
+            id,
+            name,
+            brand_color,
+            icon_data_url,
+            source_id: String::new(),
+            installed: true,
+            installed_source_id: None,
+            unmanaged: true,
+            installed_version: Some(version.clone()),
+            available_version: version,
+            update_available: false,
+        });
+    }
+    locals.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(locals)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
