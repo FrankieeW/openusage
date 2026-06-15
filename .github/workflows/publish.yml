@@ -95,7 +95,7 @@ jobs:
       - name: Update Homebrew tap
         if: matrix.args == '--target aarch64-apple-darwin'
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_OPENUSAGECC }}
         run: |
           TAG="${RELEASE_TAG#v}"
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/FrankieeW/homebrew-openusage.git" tap
