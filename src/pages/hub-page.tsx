@@ -56,7 +56,7 @@ export function HubPage() {
       {sources.length === 0 && localPlugins.length === 0 && (
         <div
           data-testid="hub-empty-state"
-          className="rounded-md border border-dashed border-border bg-muted/30 px-6 py-12 text-center"
+          className="bg-muted/50 rounded-lg border border-dashed/30 px-6 py-12 text-center"
         >
           <p className="text-sm text-muted-foreground">
             No sources yet. Add a GitHub repo to browse plugins.
@@ -65,7 +65,7 @@ export function HubPage() {
       )}
 
       {localPlugins.length > 0 && (
-        <section className="rounded-md border border-border bg-card">
+        <section className="bg-muted/50 rounded-lg">
           <header className="flex items-center gap-3 px-4 py-3">
             <span className="text-sm font-medium">Local</span>
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">

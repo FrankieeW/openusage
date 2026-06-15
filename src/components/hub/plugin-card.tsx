@@ -94,7 +94,7 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
       data-testid="hub-plugin-card"
       data-plugin-id={plugin.id}
       className={cn(
-        "rounded-md border border-border bg-card px-3 py-2 space-y-1.5",
+        "bg-muted/50 rounded-lg px-3 py-2 space-y-1.5",
         (installLoading || uninstallLoading) && "opacity-60",
         plugin.unmanaged && "border-dashed",
       )}

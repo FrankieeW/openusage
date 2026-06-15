@@ -45,9 +45,8 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
       data-testid="hub-source-card"
       data-source-id={source.id}
       className={
-        "rounded-md border bg-card " +
-        (highlighted ? "ring-2 ring-primary " : "") +
-        "border-border"
+        "bg-muted/50 rounded-lg " +
+        (highlighted ? "ring-2 ring-primary " : "")
       }
       ref={(el) => {
         if (highlighted && el) {
