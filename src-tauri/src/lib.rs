@@ -550,7 +550,15 @@ pub fn run() {
             start_probe_batch,
             list_plugins,
             get_log_path,
-            update_global_shortcut
+            update_global_shortcut,
+            hub::hub_list_sources,
+            hub::hub_add_source,
+            hub::hub_remove_source,
+            hub::hub_browse_source,
+            hub::hub_install,
+            hub::hub_uninstall,
+            hub::hub_refresh_source,
+            hub::hub_check_updates
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
