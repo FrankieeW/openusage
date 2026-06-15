@@ -104,21 +104,19 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
       data-testid="hub-plugin-card"
       data-plugin-id={plugin.id}
       className={cn(
-        "flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2",
+        "rounded-md border border-border bg-card px-3 py-2 space-y-1.5",
         (installLoading || uninstallLoading) && "opacity-60",
         plugin.unmanaged && "border-dashed",
       )}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{plugin.name}</span>
-          <span className="text-xs text-muted-foreground">v{plugin.availableVersion}</span>
-          {plugin.updateAvailable && (
-            <span className="text-xs text-blue-600">↑ {plugin.installedVersion}</span>
-          )}
-                  </div>
+      <div className="flex items-center gap-2">
+        <span className="truncate text-sm font-medium">{plugin.name}</span>
+        <span className="text-xs text-muted-foreground">v{plugin.availableVersion}</span>
+        {plugin.updateAvailable && (
+          <span className="text-xs text-blue-600">↑ {plugin.installedVersion}</span>
+        )}
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex items-center gap-1.5">
         {!plugin.installed && (
           <Button
             size="xs"

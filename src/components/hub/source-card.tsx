@@ -57,11 +57,11 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
         }
       }}
     >
-      <header className="flex items-center gap-3 px-4 py-3">
+      <header className="px-4 py-3 space-y-2">
         <button
           type="button"
           onClick={toggle}
-          className="flex flex-1 items-center gap-2 text-left"
+          className="flex w-full items-center gap-2 text-left"
           data-testid="hub-source-toggle"
         >
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -85,6 +85,7 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
             data-testid="hub-source-refresh"
           >
             <RefreshCw size={12} />
+            <span className="ml-1">Refresh</span>
           </Button>
           <Button
             size="xs"
@@ -94,6 +95,7 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
             data-testid="hub-source-delete"
           >
             <Trash2 size={12} />
+            <span className="ml-1">Delete</span>
           </Button>
         </div>
       </header>
