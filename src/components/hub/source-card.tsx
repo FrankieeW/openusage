@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
-  Settings,
   Trash2,
 } from "lucide-react"
 import { useState } from "react"
@@ -96,9 +95,6 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
           >
             <Trash2 size={12} />
           </Button>
-          <span title="Settings coming soon" className="text-muted-foreground">
-            <Settings size={12} className="opacity-30" />
-          </span>
         </div>
       </header>
 
