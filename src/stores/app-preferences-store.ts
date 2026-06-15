@@ -10,6 +10,7 @@ import {
   DEFAULT_START_ON_LOGIN,
   DEFAULT_THEME_MODE,
   DEFAULT_TIME_FORMAT_MODE,
+  DEFAULT_UNSAFE_ALLOW_ALL_ENV,
   type AutoUpdateIntervalMinutes,
   type DisplayMode,
   type GlobalShortcut,
@@ -31,6 +32,7 @@ type AppPreferencesStore = {
   menubarIconStyle: MenubarIconStyle
   menubarMetric: MenubarMetric
   hubAutoCheck: boolean
+  unsafeAllowAllEnv: boolean
   setAutoUpdateInterval: (value: AutoUpdateIntervalMinutes) => void
   setThemeMode: (value: ThemeMode) => void
   setDisplayMode: (value: DisplayMode) => void
@@ -41,6 +43,7 @@ type AppPreferencesStore = {
   setMenubarIconStyle: (value: MenubarIconStyle) => void
   setMenubarMetric: (value: MenubarMetric) => void
   setHubAutoCheck: (value: boolean) => void
+  setUnsafeAllowAllEnv: (value: boolean) => void
   resetState: () => void
 }
 
@@ -55,6 +58,7 @@ const initialState = {
   menubarIconStyle: DEFAULT_MENUBAR_ICON_STYLE,
   menubarMetric: DEFAULT_MENUBAR_METRIC,
   hubAutoCheck: DEFAULT_HUB_AUTO_CHECK,
+  unsafeAllowAllEnv: DEFAULT_UNSAFE_ALLOW_ALL_ENV,
 }
 
 export const useAppPreferencesStore = create<AppPreferencesStore>((set) => ({
@@ -69,5 +73,6 @@ export const useAppPreferencesStore = create<AppPreferencesStore>((set) => ({
   setMenubarIconStyle: (value) => set({ menubarIconStyle: value }),
   setMenubarMetric: (value) => set({ menubarMetric: value }),
   setHubAutoCheck: (value) => set({ hubAutoCheck: value }),
+  setUnsafeAllowAllEnv: (value) => set({ unsafeAllowAllEnv: value }),
   resetState: () => set(initialState),
 }))

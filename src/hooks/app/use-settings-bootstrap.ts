@@ -29,6 +29,7 @@ import {
   loadResetTimerDisplayMode,
   loadStartOnLogin,
   loadThemeMode,
+  loadUnsafeAllowAllEnv,
   loadTimeFormatMode,
   normalizePluginSettings,
   savePluginSettings,
@@ -53,6 +54,7 @@ type UseSettingsBootstrapArgs = {
   setTimeFormatMode: (value: TimeFormatMode) => void
   setGlobalShortcut: (value: GlobalShortcut) => void
   setStartOnLogin: (value: boolean) => void
+  setUnsafeAllowAllEnv: (value: boolean) => void
   setMenubarIconStyle: (value: MenubarIconStyle) => void
   setMenubarMetric: (value: MenubarMetric) => void
   setLoadingForPlugins: (ids: string[]) => void
@@ -70,6 +72,7 @@ export function useSettingsBootstrap({
   setTimeFormatMode,
   setGlobalShortcut,
   setStartOnLogin,
+  setUnsafeAllowAllEnv,
   setMenubarIconStyle,
   setMenubarMetric,
   setLoadingForPlugins,
@@ -87,6 +90,11 @@ export function useSettingsBootstrap({
     }
 
     await disableAutostart()
+  }, [])
+
+  const applyUnsafeAllowAllEnv = useCallback(async (value: boolean) => {
+    if (!isTauri()) return
+    await invoke("set_allow_all_env", { enabled: value })
   }, [])
 
   useEffect(() => {
@@ -179,6 +187,19 @@ export function useSettingsBootstrap({
           console.error("Failed to load menubar metric:", error)
         }
 
+        let storedUnsafeAllowAllEnv = false
+        try {
+          storedUnsafeAllowAllEnv = await loadUnsafeAllowAllEnv()
+        } catch (error) {
+          console.error("Failed to load unsafe allow-all-env setting:", error)
+        }
+
+        try {
+          await applyUnsafeAllowAllEnv(storedUnsafeAllowAllEnv)
+        } catch (error) {
+          console.error("Failed to apply unsafe allow-all-env setting:", error)
+        }
+
         if (isMounted) {
           setPluginSettings(normalized)
           setAutoUpdateInterval(storedInterval)
@@ -188,6 +209,7 @@ export function useSettingsBootstrap({
           setTimeFormatMode(storedTimeFormatMode)
           setGlobalShortcut(storedGlobalShortcut)
           setStartOnLogin(storedStartOnLogin)
+          setUnsafeAllowAllEnv(storedUnsafeAllowAllEnv)
           setMenubarIconStyle(storedMenubarIconStyle)
           setMenubarMetric(storedMenubarMetric)
 
@@ -229,10 +251,12 @@ export function useSettingsBootstrap({
     setStartOnLogin,
     setThemeMode,
     setTimeFormatMode,
+    setUnsafeAllowAllEnv,
     startBatch,
   ])
 
   return {
     applyStartOnLogin,
+    applyUnsafeAllowAllEnv,
   }
 }

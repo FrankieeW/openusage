@@ -40,6 +40,7 @@ export type AppContentActionProps = {
   traySettingsPreview: TraySettingsPreview
   onGlobalShortcutChange: (value: GlobalShortcut) => void
   onStartOnLoginChange: (value: boolean) => void
+  onUnsafeAllowAllEnvChange: (value: boolean) => void
 }
 
 export type AppContentProps = AppContentDerivedProps & AppContentActionProps
@@ -62,6 +63,7 @@ export function AppContent({
   traySettingsPreview,
   onGlobalShortcutChange,
   onStartOnLoginChange,
+  onUnsafeAllowAllEnvChange,
 }: AppContentProps) {
   const { activeView } = useAppUiStore(
     useShallow((state) => ({
@@ -79,6 +81,7 @@ export function AppContent({
     globalShortcut,
     themeMode,
     startOnLogin,
+    unsafeAllowAllEnv,
   } = useAppPreferencesStore(
     useShallow((state) => ({
       displayMode: state.displayMode,
@@ -90,6 +93,7 @@ export function AppContent({
       globalShortcut: state.globalShortcut,
       themeMode: state.themeMode,
       startOnLogin: state.startOnLogin,
+      unsafeAllowAllEnv: state.unsafeAllowAllEnv,
     }))
   )
 
@@ -135,6 +139,8 @@ export function AppContent({
         onGlobalShortcutChange={onGlobalShortcutChange}
         startOnLogin={startOnLogin}
         onStartOnLoginChange={onStartOnLoginChange}
+        unsafeAllowAllEnv={unsafeAllowAllEnv}
+        onUnsafeAllowAllEnvChange={onUnsafeAllowAllEnvChange}
       />
     )
   }

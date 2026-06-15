@@ -10,10 +10,11 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-const WHITELISTED_ENV_VARS: [&str; 16] = [
+const WHITELISTED_ENV_VARS: [&str; 17] = [
     "CODEX_HOME",
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_CODE_OAUTH_TOKEN",
@@ -30,7 +31,24 @@ const WHITELISTED_ENV_VARS: [&str; 16] = [
     "MINIMAX_CN_API_KEY",
     "SYNTHETIC_API_KEY",
     "PI_CODING_AGENT_DIR",
+    "DEEPSEEK_API_KEY",
 ];
+
+// Unsafe escape hatch: when enabled (via the Settings toggle), plugins can read
+// *any* environment variable, bypassing WHITELISTED_ENV_VARS. Off by default.
+// A malicious or buggy plugin could then exfiltrate arbitrary secrets, so this
+// is opt-in only. Synced from `settings.json` at startup and on change.
+static ALLOW_ALL_ENV: AtomicBool = AtomicBool::new(false);
+
+/// Toggle the unsafe "read all env vars" mode. Called from the Tauri command
+/// and from startup when reading persisted settings.
+pub fn set_allow_all_env(enabled: bool) {
+    ALLOW_ALL_ENV.store(enabled, Ordering::Relaxed);
+}
+
+fn allow_all_env() -> bool {
+    ALLOW_ALL_ENV.load(Ordering::Relaxed)
+}
 const MIN_BLOCKING_TIMEOUT: Duration = Duration::from_millis(1);
 
 #[derive(Clone, Copy, Debug)]
@@ -797,7 +815,7 @@ fn inject_env<'js>(ctx: &Ctx<'js>, host: &Object<'js>, _plugin_id: &str) -> rqui
     env_obj.set(
         "get",
         Function::new(ctx.clone(), move |name: String| -> Option<String> {
-            if !WHITELISTED_ENV_VARS.contains(&name.as_str()) {
+            if !allow_all_env() && !WHITELISTED_ENV_VARS.contains(&name.as_str()) {
                 return None;
             }
 

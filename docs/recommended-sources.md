@@ -16,6 +16,7 @@ source. Add one by pasting its URL into **Add Source**.
 | --- | --- | --- |
 | Zed AI | https://github.com/rohithgoud30/openusage/tree/add-zed-ai-support | ⚠️ Untested |
 | Warp | https://github.com/JulianKniephoff/openusage/tree/feat/warp | ⚠️ Untested |
+| Multiple (incl. DeepSeek) | https://github.com/barramee27/crossusage | ⚠️ Untested |
 
 ## Contributing
 

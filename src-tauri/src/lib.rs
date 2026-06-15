@@ -50,6 +50,24 @@ fn should_track_daily_active(last_tracked_day: Option<&str>, today: &str) -> boo
     }
 }
 
+/// Read the persisted `unsafeAllowAllEnv` flag and sync it into the plugin
+/// engine so the setting takes effect even before the frontend boots.
+fn apply_unsafe_env_setting(app_handle: &tauri::AppHandle) {
+    use tauri_plugin_store::StoreExt;
+
+    let enabled = match app_handle.store("settings.json") {
+        Ok(store) => store
+            .get("unsafeAllowAllEnv")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        Err(error) => {
+            log::warn!("Failed to read unsafeAllowAllEnv from settings: {}", error);
+            false
+        }
+    };
+    plugin_engine::host_api::set_allow_all_env(enabled);
+}
+
 #[cfg(desktop)]
 fn track_daily_active_if_needed(app_handle: &tauri::AppHandle) {
     use tauri_plugin_store::StoreExt;
@@ -211,6 +229,13 @@ fn hide_panel(app_handle: tauri::AppHandle) {
     if let Ok(panel) = app_handle.get_webview_panel("main") {
         panel.hide();
     }
+}
+
+/// Unsafe escape hatch toggled from Settings: when enabled, plugins may read
+/// any environment variable instead of just the whitelisted ones.
+#[tauri::command]
+fn set_allow_all_env(enabled: bool) {
+    plugin_engine::host_api::set_allow_all_env(enabled);
 }
 
 #[tauri::command]
@@ -569,6 +594,7 @@ pub fn run() {
             init_panel,
             hide_panel,
             open_devtools,
+            set_allow_all_env,
             start_probe_batch,
             list_plugins,
             get_log_path,
@@ -600,6 +626,8 @@ pub fn run() {
 
             // Load config early (lazy init via OnceLock, zero-cost after)
             let _proxy = config::get_resolved_proxy();
+
+            apply_unsafe_env_setting(app.handle());
 
             track_daily_active_if_needed(app.handle());
             #[cfg(desktop)]

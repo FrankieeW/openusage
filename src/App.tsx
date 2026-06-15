@@ -60,6 +60,7 @@ function App() {
     setTimeFormatMode,
     setGlobalShortcut,
     setStartOnLogin,
+    setUnsafeAllowAllEnv,
   } = useAppPreferencesStore(
     useShallow((state) => ({
       autoUpdateInterval: state.autoUpdateInterval,
@@ -77,6 +78,7 @@ function App() {
       setTimeFormatMode: state.setTimeFormatMode,
       setGlobalShortcut: state.setGlobalShortcut,
       setStartOnLogin: state.setStartOnLogin,
+      setUnsafeAllowAllEnv: state.setUnsafeAllowAllEnv,
     }))
   )
 
@@ -116,7 +118,7 @@ function App() {
     }
   }, [scheduleTrayIconUpdate])
 
-  const { applyStartOnLogin } = useSettingsBootstrap({
+  const { applyStartOnLogin, applyUnsafeAllowAllEnv } = useSettingsBootstrap({
     setPluginSettings,
     setPluginsMeta,
     setAutoUpdateInterval,
@@ -128,6 +130,7 @@ function App() {
     setTimeFormatMode,
     setGlobalShortcut,
     setStartOnLogin,
+    setUnsafeAllowAllEnv,
     setLoadingForPlugins,
     setErrorForPlugins,
     startBatch,
@@ -158,13 +161,16 @@ function App() {
     handleAutoUpdateIntervalChange,
     handleGlobalShortcutChange,
     handleStartOnLoginChange,
+    handleUnsafeAllowAllEnvChange,
   } = useSettingsSystemActions({
     pluginSettings,
     setAutoUpdateInterval,
     setAutoUpdateNextAt,
     setGlobalShortcut,
     setStartOnLogin,
+    setUnsafeAllowAllEnv,
     applyStartOnLogin,
+    applyUnsafeAllowAllEnv,
   })
 
   const {
@@ -263,6 +269,7 @@ function App() {
         traySettingsPreview,
         onGlobalShortcutChange: handleGlobalShortcutChange,
         onStartOnLoginChange: handleStartOnLoginChange,
+        onUnsafeAllowAllEnvChange: handleUnsafeAllowAllEnvChange,
       }}
     />
   )

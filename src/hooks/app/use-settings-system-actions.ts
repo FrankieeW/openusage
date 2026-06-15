@@ -5,6 +5,7 @@ import {
   saveAutoUpdateInterval,
   saveGlobalShortcut,
   saveStartOnLogin,
+  saveUnsafeAllowAllEnv,
   type AutoUpdateIntervalMinutes,
   type GlobalShortcut,
   type PluginSettings,
@@ -16,7 +17,9 @@ type UseSettingsSystemActionsArgs = {
   setAutoUpdateNextAt: (value: number | null) => void
   setGlobalShortcut: (value: GlobalShortcut) => void
   setStartOnLogin: (value: boolean) => void
+  setUnsafeAllowAllEnv: (value: boolean) => void
   applyStartOnLogin: (value: boolean) => Promise<void>
+  applyUnsafeAllowAllEnv: (value: boolean) => Promise<void>
 }
 
 export function useSettingsSystemActions({
@@ -25,7 +28,9 @@ export function useSettingsSystemActions({
   setAutoUpdateNextAt,
   setGlobalShortcut,
   setStartOnLogin,
+  setUnsafeAllowAllEnv,
   applyStartOnLogin,
+  applyUnsafeAllowAllEnv,
 }: UseSettingsSystemActionsArgs) {
   const handleAutoUpdateIntervalChange = useCallback((value: AutoUpdateIntervalMinutes) => {
     setAutoUpdateInterval(value)
@@ -64,9 +69,20 @@ export function useSettingsSystemActions({
     })
   }, [applyStartOnLogin, setStartOnLogin])
 
+  const handleUnsafeAllowAllEnvChange = useCallback((value: boolean) => {
+    setUnsafeAllowAllEnv(value)
+    void saveUnsafeAllowAllEnv(value).catch((error) => {
+      console.error("Failed to save unsafe allow-all-env:", error)
+    })
+    void applyUnsafeAllowAllEnv(value).catch((error) => {
+      console.error("Failed to apply unsafe allow-all-env:", error)
+    })
+  }, [applyUnsafeAllowAllEnv, setUnsafeAllowAllEnv])
+
   return {
     handleAutoUpdateIntervalChange,
     handleGlobalShortcutChange,
     handleStartOnLoginChange,
+    handleUnsafeAllowAllEnvChange,
   }
 }

@@ -284,6 +284,8 @@ interface SettingsPageProps {
   onGlobalShortcutChange: (value: GlobalShortcut) => void;
   startOnLogin: boolean;
   onStartOnLoginChange: (value: boolean) => void;
+  unsafeAllowAllEnv: boolean;
+  onUnsafeAllowAllEnvChange: (value: boolean) => void;
 }
 
 export function SettingsPage({
@@ -309,6 +311,8 @@ export function SettingsPage({
   onGlobalShortcutChange,
   startOnLogin,
   onStartOnLoginChange,
+  unsafeAllowAllEnv,
+  onUnsafeAllowAllEnvChange,
 }: SettingsPageProps) {
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -557,6 +561,22 @@ export function SettingsPage({
             onCheckedChange={(checked) => onStartOnLoginChange(checked === true)}
           />
           Start on login
+        </label>
+      </section>
+      <section>
+        <h3 className="text-lg font-semibold mb-0">Plugin environment access</h3>
+        <p className="text-sm text-muted-foreground mb-2">
+          Off by default. Only enable for sources you trust.
+        </p>
+        <label className="flex items-center gap-2 text-sm select-none text-foreground">
+          <Checkbox
+            key={`unsafe-allow-all-env-${unsafeAllowAllEnv}`}
+            checked={unsafeAllowAllEnv}
+            onCheckedChange={(checked) => onUnsafeAllowAllEnvChange(checked === true)}
+          />
+          <span className="text-red-600 dark:text-red-400 font-medium">
+            Allow plugins to read all environment variables (unsafe)
+          </span>
         </label>
       </section>
       <section>
