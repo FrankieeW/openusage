@@ -657,6 +657,7 @@ pub fn run() {
             update_global_shortcut,
             hub::hub_list_sources,
             hub::hub_add_source,
+            hub::hub_update_source,
             hub::hub_remove_source,
             hub::hub_browse_source,
             hub::hub_install,

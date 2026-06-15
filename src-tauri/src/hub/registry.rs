@@ -21,6 +21,11 @@ pub struct Source {
     pub url: String,
     pub kind: SourceKind,
     pub branch: Option<String>,
+    /// If non-empty, only plugins whose id is in this list are shown / installable
+    /// for this source. `None` or empty means "all plugins in the source".
+    /// Old `sources.json` files deserialise with `#[serde(default)]` → empty.
+    #[serde(default)]
+    pub plugin_filter: Option<Vec<String>>,
     pub added_at: i64,
     pub last_refreshed_at: Option<i64>,
     pub auto_check: bool,
@@ -58,6 +63,7 @@ pub fn default_registry() -> RegistryFile {
             url: DEFAULT_HUB_URL.into(),
             kind: SourceKind::Github,
             branch: None,
+            plugin_filter: None,
             added_at: 0,
             last_refreshed_at: None,
             auto_check: false,
@@ -142,6 +148,7 @@ mod tests {
             added_at: 1234567890,
             last_refreshed_at: Some(1234567891),
             branch: None,
+            plugin_filter: None,
             auto_check: true,
         }
     }

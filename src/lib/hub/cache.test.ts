@@ -16,6 +16,7 @@ function sampleSource(id: string): Source {
     url: "https://github.com/foo/bar",
     kind: "Github",
     branch: null,
+    pluginFilter: null,
     addedAt: 0,
     lastRefreshedAt: null,
     autoCheck: false,
@@ -199,6 +200,65 @@ describe("useHubStore", () => {
     const result = await useHubStore.getState().addSource("https://github.com/x/y")
     expect(result?.id).toBe("new")
     expect(useHubStore.getState().sources.map((s) => s.id)).toContain("new")
+  })
+
+  it("addSource forwards pluginFilter to the command", async () => {
+    const returned: Source = {
+      ...sampleSource("new"),
+      pluginFilter: ["openrouter", "claude"],
+    }
+    invokeMock.mockResolvedValueOnce(returned)
+    await useHubStore
+      .getState()
+      .addSource("https://github.com/x/y", undefined, undefined, [
+        "openrouter",
+        "claude",
+      ])
+    expect(invokeMock).toHaveBeenCalledWith("hub_add_source", {
+      url: "https://github.com/x/y",
+      label: null,
+      branch: null,
+      pluginFilter: ["openrouter", "claude"],
+    })
+  })
+
+  it("updateSource calls hub_update_source, replaces source, and refreshes browse", async () => {
+    useHubStore.setState({
+      sources: [sampleSource("s1")],
+      browseBySource: {},
+    })
+    const updated: Source = { ...sampleSource("s1"), label: "New Label" }
+    const browse: HubBrowseView = sampleBrowse("s1", "p1")
+    invokeMock.mockResolvedValueOnce(updated) // hub_update_source
+    invokeMock.mockResolvedValueOnce(browse) // hub_browse_source
+    const result = await useHubStore
+      .getState()
+      .updateSource("s1", { label: "New Label" })
+    expect(result?.label).toBe("New Label")
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "hub_update_source", {
+      sourceId: "s1",
+      label: "New Label",
+      branch: null,
+      pluginFilter: null,
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "hub_browse_source", {
+      sourceId: "s1",
+    })
+    expect(useHubStore.getState().sources[0].label).toBe("New Label")
+    expect(useHubStore.getState().browseBySource["s1"]).toEqual(browse)
+  })
+
+  it("updateSource captures errors and returns null", async () => {
+    useHubStore.setState({ sources: [sampleSource("s1")] })
+    invokeMock.mockRejectedValueOnce({
+      code: "NotFound",
+      message: "missing",
+    })
+    const result = await useHubStore
+      .getState()
+      .updateSource("s1", { label: "x" })
+    expect(result).toBeNull()
+    expect(useHubStore.getState().error?.code).toBe("NotFound")
   })
 
   it("addSource returns null and captures error on failure", async () => {

@@ -16,6 +16,11 @@ export interface Source {
   url: string
   kind: SourceKind
   branch: string | null
+  /**
+   * If non-empty, only plugins whose id is in this list are shown / installable
+   * for this source. `null` or empty means "all plugins in the source".
+   */
+  pluginFilter: string[] | null
   addedAt: number
   lastRefreshedAt: number | null
   autoCheck: boolean

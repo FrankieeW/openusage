@@ -12,10 +12,30 @@ interface AddSourceDialogProps {
   onClose: () => void
 }
 
+/**
+ * Parse free-form text into a normalized plugin id list.
+ * Splits on whitespace and commas, trims, dedupes (case-sensitive),
+ * drops empties. Returns `null` when no ids are present so callers
+ * can pass `null` to disable the filter.
+ */
+export function parsePluginFilter(text: string): string[] | null {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const part of text.split(/[\s,]+/)) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    if (seen.has(trimmed)) continue
+    seen.add(trimmed)
+    out.push(trimmed)
+  }
+  return out.length > 0 ? out : null
+}
+
 export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
   const [url, setUrl] = useState("")
   const [label, setLabel] = useState("")
   const [branch, setBranch] = useState("")
+  const [pluginFilterText, setPluginFilterText] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const addSource = useHubStore((s) => s.addSource)
   const browseSource = useHubStore((s) => s.browseSource)
@@ -46,7 +66,12 @@ export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
     if (!looksValid || submitting) return
     setSubmitting(true)
     try {
-      const source = await addSource(trimmed, label.trim() || undefined, branch.trim() || undefined)
+      const source = await addSource(
+        trimmed,
+        label.trim() || undefined,
+        branch.trim() || undefined,
+        parsePluginFilter(pluginFilterText),
+      )
       if (source) {
         await browseSource(source.id)
         onClose()
@@ -105,6 +130,21 @@ export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
             value={branch}
             onChange={(e) => setBranch(e.target.value)}
           />
+        </label>
+        <label className="block">
+          <span className="text-xs text-muted-foreground">
+            Plugins (optional)
+          </span>
+          <input
+            data-testid="hub-add-source-plugin-filter"
+            className="mt-1 w-full rounded-sm border border-input bg-background px-2 py-1.5 text-sm focus-visible:border-ring focus-visible:outline-none"
+            placeholder="openrouter, claude, foo-bar"
+            value={pluginFilterText}
+            onChange={(e) => setPluginFilterText(e.target.value)}
+          />
+          <span className="mt-1 block text-[10px] text-muted-foreground">
+            Comma or space separated. Leave empty to show all plugins.
+          </span>
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" size="sm" onClick={onClose}>

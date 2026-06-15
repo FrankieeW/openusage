@@ -25,6 +25,7 @@ function sampleSource(id: string): Source {
     url: "https://github.com/foo/bar",
     kind: "Github",
     branch: null,
+    pluginFilter: null,
     addedAt: 0,
     lastRefreshedAt: null,
     autoCheck: false,

@@ -29,8 +29,32 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 
 export const hubCommands = {
   listSources: () => call<Source[]>("hub_list_sources"),
-  addSource: (url: string, label?: string, branch?: string) =>
-    call<Source>("hub_add_source", { url, label: label ?? null, branch: branch ?? null }),
+  addSource: (
+    url: string,
+    label?: string,
+    branch?: string,
+    pluginFilter?: string[] | null,
+  ) =>
+    call<Source>("hub_add_source", {
+      url,
+      label: label ?? null,
+      branch: branch ?? null,
+      pluginFilter: pluginFilter ?? null,
+    }),
+  updateSource: (
+    sourceId: string,
+    updates: {
+      label?: string | null
+      branch?: string | null
+      pluginFilter?: string[] | null
+    },
+  ) =>
+    call<Source>("hub_update_source", {
+      sourceId,
+      label: updates.label ?? null,
+      branch: updates.branch ?? null,
+      pluginFilter: updates.pluginFilter ?? null,
+    }),
   removeSource: (sourceId: string) =>
     call<void>("hub_remove_source", { sourceId }),
   browseSource: (sourceId: string) =>

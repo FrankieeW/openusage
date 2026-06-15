@@ -7,10 +7,12 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
+  Pencil,
   RefreshCw,
   Trash2,
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
+import { EditSourceDialog } from "./edit-source-dialog"
 import { PluginBrowser } from "./plugin-card"
 
 interface SourceCardProps {
@@ -21,6 +23,7 @@ interface SourceCardProps {
 export function SourceCard({ source, defaultExpanded = false }: SourceCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [dedup, setDedup] = useState(false)
   const browseBySource = useHubStore((s) => s.browseBySource)
   const browseSource = useHubStore((s) => s.browseSource)
@@ -135,6 +138,16 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
           <Button
             size="xs"
             variant="ghost"
+            onClick={() => setEditing(true)}
+            aria-label="Edit source"
+            data-testid="hub-source-edit"
+          >
+            <Pencil size={12} />
+            <span className="ml-1">Edit</span>
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
             onClick={() => setConfirmingDelete(true)}
             aria-label="Delete source"
             data-testid="hub-source-delete"
@@ -181,6 +194,12 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
             Cancel
           </Button>
         </div>
+      )}
+      {editing && (
+        <EditSourceDialog
+          source={source}
+          onClose={() => setEditing(false)}
+        />
       )}
     </section>
   )

@@ -265,6 +265,7 @@ mod sweep_tests {
             added_at: 0,
             last_refreshed_at: None,
             branch: None,
+            plugin_filter: None,
             auto_check: false,
         }
     }

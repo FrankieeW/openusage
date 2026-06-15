@@ -30,6 +30,8 @@ describe("hubCommands", () => {
     expect(invokeMock).toHaveBeenCalledWith("hub_add_source", {
       url: "https://github.com/foo/bar",
       label: "Foo",
+      branch: null,
+      pluginFilter: null,
     })
   })
 
@@ -39,6 +41,8 @@ describe("hubCommands", () => {
     expect(invokeMock).toHaveBeenCalledWith("hub_add_source", {
       url: "https://github.com/foo/bar",
       label: null,
+      branch: null,
+      pluginFilter: null,
     })
   })
 

@@ -40,7 +40,20 @@ interface HubState {
 
   refreshSources: () => Promise<void>
   browseSource: (id: string, force?: boolean) => Promise<HubBrowseView | null>
-  addSource: (url: string, label?: string, branch?: string) => Promise<Source | null>
+  addSource: (
+    url: string,
+    label?: string,
+    branch?: string,
+    pluginFilter?: string[] | null,
+  ) => Promise<Source | null>
+  updateSource: (
+    sourceId: string,
+    updates: {
+      label?: string | null
+      branch?: string | null
+      pluginFilter?: string[] | null
+    },
+  ) => Promise<Source | null>
   removeSource: (id: string) => Promise<void>
   refreshSource: (id: string) => Promise<HubBrowseView | null>
   install: (sourceId: string, pluginId: string) => Promise<void>
@@ -107,11 +120,34 @@ export const useHubStore = create<HubState>((set, get) => ({
     }
   },
 
-  addSource: async (url, label, branch) => {
+  addSource: async (url, label, branch, pluginFilter) => {
     try {
-      const source = await hubCommands.addSource(url, label, branch)
+      const source = await hubCommands.addSource(url, label, branch, pluginFilter)
       set((s) => ({ sources: [...s.sources, source] }))
       return source
+    } catch (err) {
+      set({ error: captureError(err) })
+      return null
+    }
+  },
+
+  updateSource: async (sourceId, updates) => {
+    try {
+      const updated = await hubCommands.updateSource(sourceId, updates)
+      set((s) => ({
+        sources: s.sources.map((src) => (src.id === sourceId ? updated : src)),
+      }))
+      // Re-fetch the browse view so the UI reflects the new filter/branch.
+      try {
+        const view = await hubCommands.browseSource(sourceId)
+        set((s) => ({
+          browseBySource: { ...s.browseBySource, [sourceId]: view },
+        }))
+      } catch (browseErr) {
+        // The update itself succeeded; surface the browse error but keep going.
+        set({ error: captureError(browseErr) })
+      }
+      return updated
     } catch (err) {
       set({ error: captureError(err) })
       return null
@@ -190,15 +226,16 @@ export const useHubStore = create<HubState>((set, get) => ({
     }))
     try {
       await hubCommands.uninstall(pluginId, sourceId)
-      // Multi-source: only mark the entry that was actually installed from this
-      // source as uninstalled. Same id from a different source stays as-is.
+      // Multi-source: only mark the entry from this source (regardless of which
+      // source the entry's `installedSourceId` points at) as uninstalled. Same id
+      // from a different source stays as-is.
       set((s) => {
         const next: Record<string, HubBrowseView> = {}
         for (const [sid, view] of Object.entries(s.browseBySource)) {
           next[sid] = {
             ...view,
             available: view.available.map((p) =>
-              p.id === pluginId && p.installedSourceId === sourceId
+              p.id === pluginId && p.sourceId === sourceId
                 ? { ...p, installed: false, installedSourceId: null, installedVersion: null, updateAvailable: false, unmanaged: false }
                 : p,
             ),

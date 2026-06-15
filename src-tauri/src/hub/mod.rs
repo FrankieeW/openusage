@@ -167,15 +167,22 @@ pub type InstalledLookup<'a> = std::collections::HashMap<String, InstalledLookup
 
 /// Walks `cache_dir/plugins/<id>/plugin.json` and returns parsed PluginInfo plus
 /// any skipped entries. Pure function — testable with tempdir fixtures.
+///
+/// If `plugin_filter` is `Some(list)` and non-empty, only plugins whose id is in
+/// the list are returned. `None` or empty list means "all plugins".
 pub fn discover_cache_plugins(
     cache_dir: &Path,
     source_id: &str,
     plugins_dir: &Path,
     installed: &InstalledLookup,
+    plugin_filter: Option<&[String]>,
 ) -> (Vec<PluginInfo>, Vec<SkippedPlugin>) {
     let plugins_subdir = cache_dir.join("plugins");
     let mut available = Vec::new();
     let mut skipped = Vec::new();
+    let filter_set: Option<std::collections::HashSet<&str>> = plugin_filter
+        .filter(|ids| !ids.is_empty())
+        .map(|ids| ids.iter().map(|s| s.as_str()).collect());
 
     if !plugins_subdir.is_dir() {
         return (available, skipped);
@@ -198,6 +205,11 @@ pub fn discover_cache_plugins(
             continue;
         }
         let id = entry.file_name().to_string_lossy().to_string();
+        if let Some(set) = filter_set.as_ref() {
+            if !set.contains(id.as_str()) {
+                continue;
+            }
+        }
         let manifest_path = plugin_dir.join("plugin.json");
         let text = match std::fs::read_to_string(&manifest_path) {
             Ok(t) => t,
@@ -359,6 +371,38 @@ pub fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+/// Look up a source's plugin_filter from the registry by id.
+/// Returns `None` for unknown sources (treated as "no filter").
+pub fn plugin_filter_lookup<'a>(
+    source_id: &str,
+    sources: &'a [Source],
+) -> Option<&'a [String]> {
+    sources
+        .iter()
+        .find(|s| s.id == source_id)
+        .and_then(|s| s.plugin_filter.as_deref())
+}
+
+/// Normalize a list of plugin ids: trim, drop empties, preserve case, dedupe.
+pub fn normalize_plugin_filter(filter: Option<Vec<String>>) -> Option<Vec<String>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for raw in filter.unwrap_or_default() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            out.push(trimmed.to_string());
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
 pub fn derive_label_from_url(url: &str) -> String {
     // e.g. "https://github.com/robinebers/openusage" -> "robinebers/openusage"
     url.trim_end_matches('/')
@@ -454,6 +498,7 @@ pub async fn hub_add_source(
     url: String,
     label: Option<String>,
     branch: Option<String>,
+    plugin_filter: Option<Vec<String>>,
 ) -> Result<Source, HubError> {
     let canonical = source::canonicalize(&url).map_err(|_| HubError::invalid_url())?;
     let kind = canonical.kind;
@@ -461,6 +506,7 @@ pub async fn hub_add_source(
 
     let id = format!("src-{}", uuid::Uuid::new_v4().simple());
     let label = label.unwrap_or_else(|| derive_label_from_url(&canonical.url));
+    let plugin_filter = normalize_plugin_filter(plugin_filter);
     let now = now_millis();
     let new_source = Source {
         id: id.clone(),
@@ -468,6 +514,7 @@ pub async fn hub_add_source(
         url: url.clone(),
         kind,
         branch: branch.clone(),
+        plugin_filter,
         added_at: now,
         last_refreshed_at: None,
         auto_check: false,
@@ -496,6 +543,63 @@ pub async fn hub_add_source(
     s.hub_registry.sources.push(new_source.clone());
     registry::write(&s.hub_dir, &s.hub_registry)?;
     Ok(new_source)
+}
+
+/// Update mutable fields on an existing source. `None` for an option leaves the
+/// field unchanged; `Some(value)` replaces it. `plugin_filter` is normalized
+/// the same way as `hub_add_source`. After mutating, the source's cache is
+/// cleared so the next browse re-fetches against the (possibly) new branch or
+/// filter set.
+#[tauri::command]
+pub async fn hub_update_source(
+    state: State<'_, Mutex<crate::AppState>>,
+    source_id: String,
+    label: Option<String>,
+    branch: Option<String>,
+    plugin_filter: Option<Vec<String>>,
+) -> Result<Source, HubError> {
+    let hub_dir = {
+        let mut s = lock_state(&state)?;
+        let target = s
+            .hub_registry
+            .sources
+            .iter_mut()
+            .find(|src| src.id == source_id)
+            .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
+        if let Some(new_label) = label {
+            target.label = new_label;
+        }
+        if let Some(new_branch) = branch {
+            target.branch = if new_branch.trim().is_empty() {
+                None
+            } else {
+                Some(new_branch)
+            };
+        }
+        if let Some(new_filter) = plugin_filter {
+            target.plugin_filter = normalize_plugin_filter(Some(new_filter));
+        }
+        // Drop the cached `last_refreshed_at` so the UI knows the source has
+        // pending re-fetch.
+        target.last_refreshed_at = None;
+        registry::write(&s.hub_dir, &s.hub_registry)?;
+        s.hub_dir.clone()
+    };
+
+    // Clear the cache so the next browse re-fetches against the (possibly) new
+    // branch or filter set.
+    let cache_path = cache_dir_for(&hub_dir, &source_id);
+    if cache_path.exists() {
+        let _ = std::fs::remove_dir_all(&cache_path);
+    }
+
+    let s = lock_state(&state)?;
+    s.hub_registry
+        .sources
+        .iter()
+        .find(|src| src.id == source_id)
+        .cloned()
+        .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))
 }
 
 #[tauri::command]
@@ -563,8 +667,13 @@ pub async fn hub_browse_source(
         }
     }
     let installed = build_installed_lookup(&plugins_dir);
-    let (available, skipped) =
-        discover_cache_plugins(&cache_path, &source_id, &plugins_dir, &installed);
+    let (available, skipped) = discover_cache_plugins(
+        &cache_path,
+        &source_id,
+        &plugins_dir,
+        &installed,
+        source.plugin_filter.as_deref(),
+    );
     Ok(HubBrowseView {
         source,
         available,
@@ -747,8 +856,13 @@ pub async fn hub_refresh_source(
     }
 
     let installed = build_installed_lookup(&plugins_dir);
-    let (available, skipped) =
-        discover_cache_plugins(&cache_path, &source_id, &plugins_dir, &installed);
+    let (available, skipped) = discover_cache_plugins(
+        &cache_path,
+        &source_id,
+        &plugins_dir,
+        &installed,
+        source.plugin_filter.as_deref(),
+    );
     Ok(HubBrowseView {
         source,
         available,
@@ -785,9 +899,9 @@ pub async fn hub_check_updates(
             .map(|src| (src.id.clone(), src.kind, src.branch.clone()))
             .collect()
     };
-    let (hub_dir, plugins_dir) = {
+    let (hub_dir, plugins_dir, sources) = {
         let s = lock_state(&state)?;
-        (s.hub_dir.clone(), s.plugins_dir.clone())
+        (s.hub_dir.clone(), s.plugins_dir.clone(), s.hub_registry.sources.clone())
     };
 
     let mut updates = Vec::new();
@@ -803,7 +917,13 @@ pub async fn hub_check_updates(
             }
         }
         let installed = build_installed_lookup(&plugins_dir);
-        let (available, _) = discover_cache_plugins(&cache_path, &id, &plugins_dir, &installed);
+        let (available, _) = discover_cache_plugins(
+            &cache_path,
+            &id,
+            &plugins_dir,
+            &installed,
+            plugin_filter_lookup(id, &sources),
+        );
         for plugin in available {
             if let (true, Some(from)) = (plugin.update_available, plugin.installed_version.clone()) {
                 updates.push(UpdateInfo {
@@ -946,7 +1066,8 @@ mod tests {
         let cache = tempdir("cache-empty");
         let plugins = tempdir("plugins-empty");
         let lookup = InstalledLookup::new();
-        let (available, skipped) = discover_cache_plugins(&cache, "src-1", &plugins, &lookup);
+        let (available, skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
         assert!(available.is_empty());
         assert!(skipped.is_empty());
     }
@@ -958,7 +1079,8 @@ mod tests {
         write_fake_plugin(&cache, "codex", "0.6.27");
         let plugins = tempdir("plugins-1");
         let lookup = InstalledLookup::new();
-        let (available, skipped) = discover_cache_plugins(&cache, "src-1", &plugins, &lookup);
+        let (available, skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
         assert_eq!(available.len(), 2);
         assert_eq!(available[0].id, "claude");
         assert_eq!(available[1].id, "codex");
@@ -983,7 +1105,7 @@ mod tests {
             },
         );
         let (available, _skipped) =
-            discover_cache_plugins(&cache, "src-1", &plugins, &lookup);
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
         let claude = available.iter().find(|p| p.id == "claude").unwrap();
         assert!(claude.installed);
         assert_eq!(claude.installed_source_id.as_deref(), Some("src-1"));
@@ -1019,7 +1141,8 @@ mod tests {
             },
         );
         // Browse the OTHER source (src-2). Same id, different source.
-        let (available, _skipped) = discover_cache_plugins(&cache, "src-2", &plugins, &lookup);
+        let (available, _skipped) =
+            discover_cache_plugins(&cache, "src-2", &plugins, &lookup, None);
         let claude = available.iter().find(|p| p.id == "claude").unwrap();
         assert!(!claude.installed, "must not show as installed from a different source");
         assert!(!claude.unmanaged, "must not show as unmanaged (it's managed by src-1)");
@@ -1043,7 +1166,8 @@ mod tests {
         .unwrap();
         // No metadata sidecar in plugins/claude/.openusage-install.json
         let lookup = InstalledLookup::new();
-        let (available, _skipped) = discover_cache_plugins(&cache, "src-1", &plugins, &lookup);
+        let (available, _skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
         let claude = available.iter().find(|p| p.id == "claude").unwrap();
         assert!(claude.installed);
         assert!(claude.unmanaged);
@@ -1061,7 +1185,8 @@ mod tests {
         )
         .unwrap();
         let plugins = tempdir("plugins-mismatch");
-        let (available, skipped) = discover_cache_plugins(&cache, "src-1", &plugins, &InstalledLookup::new());
+        let (available, skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &InstalledLookup::new(), None);
         assert_eq!(available.len(), 0);
         assert_eq!(skipped.len(), 1);
         assert!(skipped[0].reason.contains("id mismatch"));
@@ -1078,10 +1203,74 @@ mod tests {
         )
         .unwrap();
         let plugins = tempdir("plugins-schema");
-        let (available, skipped) = discover_cache_plugins(&cache, "src-1", &plugins, &InstalledLookup::new());
+        let (available, skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &InstalledLookup::new(), None);
         assert!(available.is_empty());
         assert_eq!(skipped.len(), 1);
         assert!(skipped[0].reason.contains("schemaVersion"));
+    }
+
+    #[test]
+    fn discover_filters_to_plugin_filter_list() {
+        let cache = tempdir("cache-filter");
+        write_fake_plugin(&cache, "claude", "0.6.27");
+        write_fake_plugin(&cache, "codex", "0.6.27");
+        let plugins = tempdir("plugins-filter");
+        let lookup = InstalledLookup::new();
+        let filter = vec!["claude".to_string()];
+        let (available, skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, Some(&filter));
+        assert_eq!(skipped.len(), 0);
+        assert_eq!(available.len(), 1);
+        assert_eq!(available[0].id, "claude");
+    }
+
+    #[test]
+    fn discover_shows_all_when_filter_is_empty() {
+        let cache = tempdir("cache-emptyfilter");
+        write_fake_plugin(&cache, "claude", "0.6.27");
+        write_fake_plugin(&cache, "codex", "0.6.27");
+        let plugins = tempdir("plugins-emptyfilter");
+        let lookup = InstalledLookup::new();
+        let empty: Vec<String> = vec![];
+        let (available, _skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, Some(&empty));
+        assert_eq!(available.len(), 2);
+    }
+
+    #[test]
+    fn discover_filters_skip_nonexistent_ids() {
+        let cache = tempdir("cache-missing");
+        write_fake_plugin(&cache, "claude", "0.6.27");
+        let plugins = tempdir("plugins-missing");
+        let lookup = InstalledLookup::new();
+        let filter = vec!["openrouter".to_string(), "claude".to_string()];
+        let (available, _skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, Some(&filter));
+        assert_eq!(available.len(), 1);
+        assert_eq!(available[0].id, "claude");
+    }
+
+    #[test]
+    fn normalize_plugin_filter_trims_dedupes_and_drops_empty() {
+        let input = vec![
+            "  claude ".to_string(),
+            "openrouter".to_string(),
+            "claude".to_string(),
+            "".to_string(),
+            "   ".to_string(),
+            "OpenRouter".to_string(),
+        ];
+        let out = normalize_plugin_filter(Some(input)).unwrap();
+        // Case-sensitive dedupe (preserves case)
+        assert_eq!(out, vec!["claude", "openrouter", "OpenRouter"]);
+    }
+
+    #[test]
+    fn normalize_plugin_filter_returns_none_when_empty() {
+        assert_eq!(normalize_plugin_filter(None), None);
+        assert_eq!(normalize_plugin_filter(Some(vec![])), None);
+        assert_eq!(normalize_plugin_filter(Some(vec!["".to_string()])), None);
     }
 
     #[test]
