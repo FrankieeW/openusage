@@ -1,5 +1,5 @@
 import { useCallback } from "react"
-import { CircleHelp, Settings } from "lucide-react"
+import { CircleHelp, Package, Settings } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { invoke } from "@tauri-apps/api/core"
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu"
@@ -249,6 +249,16 @@ export function SideNav({
           </SortableContext>
         </DndContext>
       </div>
+
+      {/* Hub */}
+      <NavButton
+        isActive={activeView === "hub"}
+        onClick={() => onViewChange("hub")}
+        aria-label="Plugin Hub"
+        data-testid="nav-hub"
+      >
+        <Package className="size-6" />
+      </NavButton>
 
       {/* Help */}
       <NavButton
