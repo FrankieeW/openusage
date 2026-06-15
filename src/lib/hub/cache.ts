@@ -40,7 +40,7 @@ interface HubState {
 
   refreshSources: () => Promise<void>
   browseSource: (id: string, force?: boolean) => Promise<HubBrowseView | null>
-  addSource: (url: string, label?: string) => Promise<Source | null>
+  addSource: (url: string, label?: string, branch?: string) => Promise<Source | null>
   removeSource: (id: string) => Promise<void>
   refreshSource: (id: string) => Promise<HubBrowseView | null>
   install: (sourceId: string, pluginId: string) => Promise<void>
@@ -107,9 +107,9 @@ export const useHubStore = create<HubState>((set, get) => ({
     }
   },
 
-  addSource: async (url, label) => {
+  addSource: async (url, label, branch) => {
     try {
-      const source = await hubCommands.addSource(url, label)
+      const source = await hubCommands.addSource(url, label, branch)
       set((s) => ({ sources: [...s.sources, source] }))
       return source
     } catch (err) {

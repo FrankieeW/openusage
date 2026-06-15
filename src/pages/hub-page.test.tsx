@@ -24,6 +24,7 @@ function sampleSource(id: string): Source {
     label: id,
     url: "https://github.com/foo/bar",
     kind: "Github",
+    branch: null,
     addedAt: 0,
     lastRefreshedAt: null,
     autoCheck: false,

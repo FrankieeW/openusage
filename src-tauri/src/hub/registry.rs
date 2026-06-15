@@ -20,6 +20,7 @@ pub struct Source {
     pub label: String,
     pub url: String,
     pub kind: SourceKind,
+    pub branch: Option<String>,
     pub added_at: i64,
     pub last_refreshed_at: Option<i64>,
     pub auto_check: bool,
@@ -56,6 +57,7 @@ pub fn default_registry() -> RegistryFile {
             label: DEFAULT_HUB_LABEL.into(),
             url: DEFAULT_HUB_URL.into(),
             kind: SourceKind::Github,
+            branch: None,
             added_at: 0,
             last_refreshed_at: None,
             auto_check: false,
@@ -139,6 +141,7 @@ mod tests {
             kind: SourceKind::Github,
             added_at: 1234567890,
             last_refreshed_at: Some(1234567891),
+            branch: None,
             auto_check: true,
         }
     }

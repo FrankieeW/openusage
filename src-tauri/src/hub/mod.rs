@@ -447,6 +447,7 @@ pub async fn hub_add_source(
     state: State<'_, Mutex<crate::AppState>>,
     url: String,
     label: Option<String>,
+    branch: Option<String>,
 ) -> Result<Source, HubError> {
     let canonical = source::canonicalize(&url).map_err(|_| HubError::invalid_url())?;
     let kind = canonical.kind;
@@ -460,6 +461,7 @@ pub async fn hub_add_source(
         label,
         url: url.clone(),
         kind,
+        branch: branch.clone(),
         added_at: now,
         last_refreshed_at: None,
         auto_check: false,
@@ -473,7 +475,7 @@ pub async fn hub_add_source(
     };
     match kind {
         SourceKind::Github | SourceKind::GenericGit => {
-            git_ops::clone(&url, &cache_path).await?;
+            git_ops::clone(&url, &cache_path, branch.as_deref()).await?;
         }
         SourceKind::LocalPath => {
             let src = canonical
@@ -545,7 +547,7 @@ pub async fn hub_browse_source(
     if !cache_path.exists() {
         match source.kind {
             SourceKind::Github | SourceKind::GenericGit => {
-                git_ops::clone(&source.url, &cache_path).await?;
+                git_ops::clone(&source.url, &cache_path, source.branch.as_deref()).await?;
             }
             SourceKind::LocalPath => {
                 return Err(HubError::not_found(
@@ -733,7 +735,7 @@ pub async fn hub_refresh_source(
             // No fetch — the local path is the source of truth
         }
         SourceKind::Github | SourceKind::GenericGit => {
-            git_ops::fetch_and_reset(&cache_path).await?;
+            git_ops::fetch_and_reset(&cache_path, source.branch.as_deref()).await?;
         }
     }
 
@@ -752,12 +754,12 @@ pub async fn hub_check_updates(
     app: AppHandle,
     state: State<'_, Mutex<crate::AppState>>,
 ) -> Result<Vec<UpdateInfo>, HubError> {
-    let source_ids: Vec<(String, SourceKind)> = {
+    let source_ids: Vec<(String, SourceKind, Option<String>)> = {
         let s = lock_state(&state)?;
         s.hub_registry
             .sources
             .iter()
-            .map(|src| (src.id.clone(), src.kind))
+            .map(|src| (src.id.clone(), src.kind, src.branch.clone()))
             .collect()
     };
     let (hub_dir, plugins_dir) = {
@@ -766,13 +768,13 @@ pub async fn hub_check_updates(
     };
 
     let mut updates = Vec::new();
-    for (id, kind) in source_ids {
-        let cache_path = cache_dir_for(&hub_dir, &id);
+    for (id, kind, branch) in &source_ids {
+        let cache_path = cache_dir_for(&hub_dir, id);
         if !cache_path.exists() {
             continue;
         }
         if matches!(kind, SourceKind::Github | SourceKind::GenericGit) {
-            if let Err(err) = git_ops::fetch_and_reset(&cache_path).await {
+            if let Err(err) = git_ops::fetch_and_reset(&cache_path, branch.as_deref()).await {
                 log::warn!("hub_check_updates: refresh {} failed: {}", id, err);
                 continue;
             }

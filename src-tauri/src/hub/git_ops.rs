@@ -50,11 +50,15 @@ pub async fn is_git_available() -> bool {
     )
 }
 
-pub async fn clone(url: &str, dest: &Path) -> Result<(), GitError> {
-    let fut = Command::new("git")
-        .arg("clone")
+pub async fn clone(url: &str, dest: &Path, branch: Option<&str>) -> Result<(), GitError> {
+    let mut cmd = Command::new("git");
+    cmd.arg("clone")
         .arg("--depth=1")
-        .arg(url)
+        .arg("--single-branch");
+    if let Some(b) = branch {
+        cmd.arg("--branch").arg(b);
+    }
+    let fut = cmd.arg(url)
         .arg(dest)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -62,14 +66,14 @@ pub async fn clone(url: &str, dest: &Path) -> Result<(), GitError> {
     run_with_timeout(fut, CLONE_TIMEOUT_SECS).await
 }
 
-pub async fn fetch_and_reset(repo_dir: &Path) -> Result<(), GitError> {
+pub async fn fetch_and_reset(repo_dir: &Path, branch: Option<&str>) -> Result<(), GitError> {
     let fetch_fut = Command::new("git")
         .arg("-C")
         .arg(repo_dir)
         .arg("fetch")
         .arg("--depth=1")
         .arg("origin")
-        .arg("HEAD")
+        .arg(branch.unwrap_or("HEAD"))
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output();
@@ -127,7 +131,7 @@ mod tests {
             std::process::id(),
             suffix
         ));
-        clone("https://github.com/octocat/Hello-World", &dest)
+        clone("https://github.com/octocat/Hello-World", &dest, None)
             .await
             .expect("clone should succeed");
         assert!(dest.join("README").exists() || dest.join("hello-world").is_dir());

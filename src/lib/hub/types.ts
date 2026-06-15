@@ -10,6 +10,7 @@ export interface Source {
   label: string
   url: string
   kind: SourceKind
+  branch: string | null
   addedAt: number
   lastRefreshedAt: number | null
   autoCheck: boolean

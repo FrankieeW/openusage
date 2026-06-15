@@ -9,6 +9,7 @@ interface AddSourceDialogProps {
 export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
   const [url, setUrl] = useState("")
   const [label, setLabel] = useState("")
+  const [branch, setBranch] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const addSource = useHubStore((s) => s.addSource)
   const browseSource = useHubStore((s) => s.browseSource)
@@ -26,7 +27,7 @@ export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
     if (!looksValid || submitting) return
     setSubmitting(true)
     try {
-      const source = await addSource(trimmed, label.trim() || undefined)
+      const source = await addSource(trimmed, label.trim() || undefined, branch.trim() || undefined)
       if (source) {
         await browseSource(source.id)
         onClose()
@@ -71,6 +72,18 @@ export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
             className="mt-1 w-full rounded-sm border border-input bg-background px-2 py-1.5 text-sm focus-visible:border-ring focus-visible:outline-none"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-muted-foreground">
+            Branch (optional)
+          </span>
+          <input
+            data-testid="hub-add-source-branch"
+            className="mt-1 w-full rounded-sm border border-input bg-background px-2 py-1.5 text-sm focus-visible:border-ring focus-visible:outline-none"
+            placeholder="main"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
           />
         </label>
         <div className="flex justify-end gap-2 pt-2">

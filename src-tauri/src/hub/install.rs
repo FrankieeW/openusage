@@ -262,6 +262,7 @@ mod sweep_tests {
             kind: SourceKind::Github,
             added_at: 0,
             last_refreshed_at: None,
+            branch: None,
             auto_check: false,
         }
     }
