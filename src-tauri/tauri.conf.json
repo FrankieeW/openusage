@@ -56,7 +56,7 @@
     "resources": [
       "icons/tray-icon.png"
     ],
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": true
   },
   "plugins": {
     "updater": {
