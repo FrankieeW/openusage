@@ -44,10 +44,7 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
     <section
       data-testid="hub-source-card"
       data-source-id={source.id}
-      className={
-        "border-b border-border/50 " +
-        (highlighted ? "ring-2 ring-primary " : "")
-      }
+      className={highlighted ? "ring-2 ring-primary" : ""}
       ref={(el) => {
         if (highlighted && el) {
           el.scrollIntoView({ block: "nearest", behavior: "smooth" })
@@ -56,7 +53,7 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
         }
       }}
     >
-      <header className="px-4 py-3 space-y-2">
+      <header className="py-2 space-y-2">
         <button
           type="button"
           onClick={toggle}

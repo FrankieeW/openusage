@@ -65,8 +65,8 @@ export function HubPage() {
       )}
 
       {localPlugins.length > 0 && (
-        <section className="border-b border-border/50">
-          <header className="flex items-center gap-3 px-1 py-3">
+        <section>
+          <header className="flex items-center gap-3 py-2">
             <span className="text-sm font-medium">Local</span>
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               Existing
