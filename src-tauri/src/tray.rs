@@ -281,6 +281,9 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
     // out via NSStatusItem.menu(mtm) in the right-click pop-up path.
     //
     // To be removed when tauri-apps/tray-icon lands an upstream fix.
+    // Removal criterion: with .show_menu_on_left_click(true) and a non-cleared
+    // NSButton target/action, left-click on macOS 27+ must no longer open
+    // the menu automatically. Track upstream progress in tauri-apps/tray-icon.
     #[cfg(target_os = "macos")]
     {
         let _ = tray.with_inner_tray_icon(|inner| {
