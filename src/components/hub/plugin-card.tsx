@@ -111,12 +111,12 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
     >
       <div className="flex items-center gap-2">
         <span className="truncate text-sm font-medium">{plugin.name}</span>
-        <span className="text-xs text-muted-foreground">v{plugin.availableVersion}</span>
         {plugin.updateAvailable && (
           <span className="text-xs text-blue-600">↑ {plugin.installedVersion}</span>
         )}
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">v{plugin.availableVersion}</span>
         {!plugin.installed && (
           <Button
             size="xs"
