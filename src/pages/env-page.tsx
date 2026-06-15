@@ -50,9 +50,16 @@ export function EnvPage() {
         <div>
           <h1 className="text-lg font-semibold mb-0">Environment Variables</h1>
           <p className="text-sm text-muted-foreground mb-1">
-            Group variables into cards and enable the ones you want active.
-            A value starting with "$" maps to another variable from your shell; a
-            value starting with "$$" is a literal that begins with "$".
+            Map a variable to a literal or to another variable from your shell.{" "}
+            <a
+              href="https://github.com/FrankieeW/openusage/blob/main/docs/env-overrides.md"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              Learn more
+            </a>
+            .
           </p>
         </div>
         <Button size="sm" onClick={handleAddGroup} data-testid="env-new-group-button">
