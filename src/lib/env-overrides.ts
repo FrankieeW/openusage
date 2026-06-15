@@ -1,4 +1,4 @@
-import { LazyStore } from "@tauri-apps/plugin-store"
+import { settingsStore } from "@/lib/settings"
 
 export type EnvOverrideKind = "literal" | "reference"
 
@@ -8,15 +8,16 @@ export type EnvOverride = {
   value: string
 }
 
-const SETTINGS_STORE_PATH = "settings.json"
 const ENV_OVERRIDES_KEY = "envOverrides"
 
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
-const store = new LazyStore(SETTINGS_STORE_PATH)
+const OVERRIDE_KINDS: EnvOverrideKind[] = ["literal", "reference"]
+
+const store = settingsStore
 
 function isKind(value: unknown): value is EnvOverrideKind {
-  return value === "literal" || value === "reference"
+  return OVERRIDE_KINDS.includes(value as EnvOverrideKind)
 }
 
 // Validate + sanitize raw overrides: valid env-var name, known kind, non-empty

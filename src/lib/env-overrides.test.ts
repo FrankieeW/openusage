@@ -5,7 +5,7 @@ const storeState = new Map<string, unknown>()
 vi.mock("@tauri-apps/plugin-store", () => ({
   LazyStore: class {
     async get<T>(key: string): Promise<T | null> {
-      if (!storeState.has(key)) return undefined as T | null
+      if (!storeState.has(key)) return null
       return storeState.get(key) as T | null
     }
     async set<T>(key: string, value: T): Promise<void> {
