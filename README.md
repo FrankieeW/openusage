@@ -21,6 +21,8 @@ Or [download the latest release](https://github.com/FrankieeW/openusage/releases
 - **Multi-source.** Same provider from different sources? Each gets its own entry.
 - **Everything upstream.** All 17 providers, menu bar tracking, global shortcut, local HTTP API, proxy support.
 
+Looking for more? See [recommended sources](docs/recommended-sources.md) for community forks that add extra providers.
+
 ## Supported Providers
 
 Claude, Codex, Copilot, Cursor, Devin, Grok, MiniMax, and more — [browse the collection](https://github.com/FrankieeW/openusage-collection). Want a provider that's not listed? Publish a plugin or [add a source](https://github.com/FrankieeW/openusage-collection#publishing).
