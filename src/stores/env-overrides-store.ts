@@ -5,7 +5,6 @@ import {
   saveEnvGroups,
   loadActiveGroupIds,
   saveActiveGroupIds,
-  saveEnvOverridesLegacy,
   parseValueInput,
   type EnvGroup,
   type EnvOverride,
@@ -35,14 +34,8 @@ type EnvOverridesStore = {
 
   setActiveGroupIds: (ids: string[]) => void
 
-  /** Flatten enabled groups into the list the backend receives. If the same
-   *  name appears in two or more enabled groups, the merged entry is a single
-   *  literal override with value "[CONFLICT: NAME]". */
   flattened: () => FlattenedOverride[]
 
-  /** Persist immediately (flush debounce), then reload plugins so they
-   *  pick up the latest env overrides. Returns the reloaded plugin count
-   *  or null on failure. */
   saveAndReload: () => Promise<number | null>
 }
 
@@ -75,18 +68,35 @@ function flattenGroups(groups: EnvGroup[], activeIds: string[]): FlattenedOverri
   return Array.from(byName.values())
 }
 
+// ---------------------------------------------------------------------------
+// Debounced persistence to env.json  +  immediate push to Rust
+// ---------------------------------------------------------------------------
+
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 let pendingSnapshot: { groups: EnvGroup[]; activeGroupIds: string[] } | null = null
 
+/** Push flattened overrides to the Rust plugin engine immediately. */
+async function pushToRust(groups: EnvGroup[], activeGroupIds: string[]): Promise<void> {
+  if (!isTauri()) return
+  const flattened = flattenGroups(groups, activeGroupIds)
+  try {
+    await invoke("set_env_overrides", { overrides: flattened })
+  } catch (e) {
+    console.error("Failed to sync env overrides to Rust:", e)
+  }
+}
+
 function scheduleSync(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }): void {
   pendingSnapshot = snapshot
+  // Push to Rust immediately so plugins see changes right away.
+  void pushToRust(snapshot.groups, snapshot.activeGroupIds)
+
   if (persistTimer !== null) clearTimeout(persistTimer)
   persistTimer = setTimeout(() => {
     const toSync = pendingSnapshot
     pendingSnapshot = null
     persistTimer = null
     if (!toSync) return
-    const flattened = flattenGroups(toSync.groups, toSync.activeGroupIds)
     void (async () => {
       try {
         await saveEnvGroups(toSync.groups)
@@ -98,17 +108,6 @@ function scheduleSync(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }
       } catch (e) {
         console.error("Failed to save active group ids:", e)
       }
-      try {
-        await saveEnvOverridesLegacy(flattened)
-      } catch (e) {
-        console.error("Failed to save legacy env overrides:", e)
-      }
-      if (!isTauri()) return
-      try {
-        await invoke("set_env_overrides", { overrides: flattened })
-      } catch (e) {
-        console.error("Failed to sync env overrides:", e)
-      }
     })()
   }, 250)
 }
@@ -119,8 +118,8 @@ function syncNow(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }): Pr
     persistTimer = null
     pendingSnapshot = null
   }
-  const flattened = flattenGroups(snapshot.groups, snapshot.activeGroupIds)
   return (async () => {
+    await pushToRust(snapshot.groups, snapshot.activeGroupIds)
     try {
       await saveEnvGroups(snapshot.groups)
     } catch (e) {
@@ -131,19 +130,12 @@ function syncNow(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }): Pr
     } catch (e) {
       console.error("Failed to save active group ids:", e)
     }
-    try {
-      await saveEnvOverridesLegacy(flattened)
-    } catch (e) {
-      console.error("Failed to save legacy env overrides:", e)
-    }
-    if (!isTauri()) return
-    try {
-      await invoke("set_env_overrides", { overrides: flattened })
-    } catch (e) {
-      console.error("Failed to sync env overrides:", e)
-    }
   })()
 }
+
+// ---------------------------------------------------------------------------
+// Store
+// ---------------------------------------------------------------------------
 
 export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
   groups: [],
@@ -154,12 +146,11 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
     if (get().loaded) return
     try {
       const groups = await loadEnvGroups()
-      // Pass pre-loaded groups so loadActiveGroupIds filters against the same
-      // group-id set — avoids the race where a concurrent migration produces
-      // different ids and silently drops all active-group entries.
       const activeGroupIds = await loadActiveGroupIds(groups)
       set({ groups, activeGroupIds, loaded: true })
-      await syncNow({ groups, activeGroupIds })
+      // Push to Rust on first load (belt-and-suspenders with the cold-start
+      // path in Rust that reads env.json directly).
+      await pushToRust(groups, activeGroupIds)
     } catch (e) {
       console.error("Failed to load env overrides:", e)
       set({ loaded: true })
@@ -230,7 +221,6 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
     if (!isTauri()) return null
     try {
       const count = await invoke<number>("hub_reload_plugins")
-      // Reload the webview so plugins re-inject env from the live override table.
       window.location.reload()
       return count
     } catch (e) {

@@ -58,6 +58,71 @@ struct EnvOverrideDto {
     value: String,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvGroupDto {
+    #[allow(dead_code)]
+    id: String,
+    #[allow(dead_code)]
+    name: String,
+    enabled: bool,
+    overrides: Vec<EnvGroupOverrideDto>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvGroupOverrideDto {
+    name: String,
+    value: String,
+}
+
+/// Flatten groups (frontend-compatible logic). Active groups only;
+/// `$REF` → reference, `$$X` → literal `$X`, everything else → literal.
+/// Conflicts (same name in >1 active group) become `[CONFLICT: NAME]`.
+fn flatten_env_groups(groups: &[EnvGroupDto], active_ids: &[String]) -> Vec<EnvOverrideDto> {
+    let active_set: HashSet<&str> = active_ids.iter().map(|s| s.as_str()).collect();
+    // name → (kind, value); None marker means conflict.
+    let mut map: HashMap<String, Option<(String, String)>> = HashMap::new();
+
+    for group in groups {
+        if !active_set.contains(group.id.as_str()) {
+            continue;
+        }
+        for o in &group.overrides {
+            if o.name.is_empty() || o.value.is_empty() {
+                continue;
+            }
+            let (kind, val) = if o.value.starts_with("$$") {
+                ("literal".to_string(), o.value[1..].to_string())
+            } else if o.value.starts_with('$') && o.value.len() > 1 {
+                ("reference".to_string(), o.value[1..].to_string())
+            } else {
+                ("literal".to_string(), o.value.clone())
+            };
+            if kind == "literal" && val.is_empty() {
+                continue;
+            }
+            if map.contains_key(&o.name) {
+                // Conflict — mark for replacement.
+                map.insert(o.name.clone(), None);
+            } else {
+                map.insert(o.name.clone(), Some((kind, val)));
+            }
+        }
+    }
+
+    map.into_iter()
+        .filter_map(|(name, entry)| match entry {
+            Some((kind, value)) => Some(EnvOverrideDto { name, kind, value }),
+            None => Some(EnvOverrideDto {
+                name: name.clone(),
+                kind: "literal".to_string(),
+                value: format!("[CONFLICT: {}]", name),
+            }),
+        })
+        .collect()
+}
+
 fn map_env_overrides(dtos: Vec<EnvOverrideDto>) -> Vec<plugin_engine::host_api::EnvOverrideInput> {
     use plugin_engine::host_api::{EnvOverrideInput, EnvOverrideKind};
     dtos.into_iter()
@@ -93,24 +158,34 @@ fn apply_unsafe_env_setting(app_handle: &tauri::AppHandle) {
     plugin_engine::host_api::set_allow_all_env(enabled);
 }
 
-/// Read persisted `envOverrides` from settings and sync them into the plugin
+/// Read persisted env groups from env.json and sync them into the plugin
 /// engine so overrides take effect even before the frontend boots.
 fn apply_env_overrides(app_handle: &tauri::AppHandle) {
     use tauri_plugin_store::StoreExt;
 
-    let raw = match app_handle.store("settings.json") {
-        Ok(store) => store.get("envOverrides"),
+    let store = match app_handle.store("env.json") {
+        Ok(store) => store,
         Err(error) => {
-            log::warn!("Failed to read envOverrides from settings: {}", error);
+            log::warn!("Failed to open env.json: {}", error);
             return;
         }
     };
 
-    let Some(value) = raw else { return };
-    match serde_json::from_value::<Vec<EnvOverrideDto>>(value) {
-        Ok(dtos) => plugin_engine::host_api::set_env_overrides(map_env_overrides(dtos)),
-        Err(error) => log::warn!("Failed to parse envOverrides from settings: {}", error),
-    }
+    let raw_groups = store.get("groups");
+    let raw_active = store.get("activeGroupIds");
+
+    let groups: Vec<EnvGroupDto> = match raw_groups.and_then(|v| serde_json::from_value(v).ok()) {
+        Some(g) => g,
+        None => return, // No groups yet — nothing to apply.
+    };
+
+    let active_ids: Vec<String> = match raw_active.and_then(|v| serde_json::from_value(v).ok()) {
+        Some(ids) => ids,
+        None => return,
+    };
+
+    let dtos = flatten_env_groups(&groups, &active_ids);
+    plugin_engine::host_api::set_env_overrides(map_env_overrides(dtos));
 }
 
 #[cfg(desktop)]

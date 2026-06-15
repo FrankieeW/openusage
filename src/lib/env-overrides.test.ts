@@ -25,6 +25,7 @@ import {
   loadActiveGroupIds,
   saveActiveGroupIds,
   normalizeGroups,
+  resetEnvMigrationForTest,
   type EnvGroup,
 } from "@/lib/env-overrides"
 
@@ -93,7 +94,10 @@ describe("normalizeGroups", () => {
 })
 
 describe("persistence", () => {
-  beforeEach(() => { storeState.clear() })
+  beforeEach(() => {
+    storeState.clear()
+    resetEnvMigrationForTest()
+  })
 
   it("loadEnvGroups returns [] by default", async () => {
     await expect(loadEnvGroups()).resolves.toEqual([])
@@ -112,16 +116,22 @@ describe("persistence", () => {
     await expect(loadActiveGroupIds()).resolves.toEqual(ids)
   })
   it("loadActiveGroupIds filters to existing group ids", async () => {
-    storeState.set("envGroups", [{ id: "g1", name: "Dev", enabled: true, overrides: [] }])
-    storeState.set("envActiveGroupIds", ["g1", "ghost"])
+    storeState.set("groups", [{ id: "g1", name: "Dev", enabled: true, overrides: [] }])
+    storeState.set("activeGroupIds", ["g1", "ghost"])
     await expect(loadActiveGroupIds()).resolves.toEqual(["g1"])
   })
   it("loadEnvGroups migrates legacy envOverrides into a Default group", async () => {
+    // Legacy data lives in settings.json, keyed as "envOverrides".
+    // The mock shares a single Map across all LazyStore instances, so
+    // settingsStore and envStore read/write the same map.
     storeState.set("envOverrides", [{ name: "A", kind: "literal", value: "api" }])
     const groups = await loadEnvGroups()
     expect(groups).toEqual([
       { id: expect.any(String), name: "Default", enabled: true, overrides: [{ name: "A", value: "api" }] },
     ])
+    // After migration, the legacy key should be deleted from settings.json.
     expect(storeState.has("envOverrides")).toBe(false)
+    // New data should be in env.json format.
+    expect(storeState.has("groups")).toBe(true)
   })
 })
