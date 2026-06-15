@@ -320,10 +320,10 @@ pub fn build_installed_lookup(plugins_dir: &Path) -> InstalledLookup<'_> {
         if !path.is_dir() {
             continue;
         }
-        let id = entry.file_name().to_string_lossy().to_string();
-        if let Some(meta) = install::read_install_metadata(plugins_dir, &id) {
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+        if let Some(meta) = install::read_install_metadata(plugins_dir, &dir_name) {
             map.insert(
-                id,
+                meta.plugin_id.clone(),
                 InstalledLookupEntry {
                     source_id: meta.source_id,
                     source_url: meta.source_url,
