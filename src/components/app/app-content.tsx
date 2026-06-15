@@ -3,6 +3,7 @@ import { OverviewPage } from "@/pages/overview"
 import { ProviderDetailPage } from "@/pages/provider-detail"
 import { SettingsPage } from "@/pages/settings"
 import { HubPage } from "@/pages/hub-page"
+import { EnvPage } from "@/pages/env-page"
 import type { DisplayPluginState } from "@/hooks/app/use-app-plugin-views"
 import type { SettingsPluginState } from "@/hooks/app/use-settings-plugin-list"
 import type { TraySettingsPreview } from "@/hooks/app/use-tray-icon"
@@ -112,6 +113,10 @@ export function AppContent({
 
   if (activeView === "hub") {
     return <HubPage />
+  }
+
+  if (activeView === "env") {
+    return <EnvPage />
   }
 
   if (activeView === "settings") {

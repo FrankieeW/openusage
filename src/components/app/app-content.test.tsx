@@ -1,10 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-const { overviewPageMock, providerDetailPageMock, settingsPageMock } = vi.hoisted(() => ({
+const { overviewPageMock, providerDetailPageMock, settingsPageMock, envPageMock } = vi.hoisted(() => ({
   overviewPageMock: vi.fn(),
   settingsPageMock: vi.fn(),
   providerDetailPageMock: vi.fn(),
+  envPageMock: vi.fn(),
 }))
 
 vi.mock("@/pages/overview", () => ({
@@ -29,6 +30,13 @@ vi.mock("@/pages/provider-detail", () => ({
         {props.onRetry ? <button onClick={props.onRetry}>retry-provider</button> : null}
       </div>
     )
+  },
+}))
+
+vi.mock("@/pages/env-page", () => ({
+  EnvPage: () => {
+    envPageMock()
+    return <div data-testid="env-page" />
   },
 }))
 
@@ -73,6 +81,7 @@ describe("AppContent", () => {
     overviewPageMock.mockReset()
     settingsPageMock.mockReset()
     providerDetailPageMock.mockReset()
+    envPageMock.mockReset()
     useAppUiStore.getState().resetState()
     useAppPreferencesStore.getState().resetState()
   })
@@ -91,6 +100,14 @@ describe("AppContent", () => {
 
     expect(screen.getByTestId("settings-page")).toBeInTheDocument()
     expect(settingsPageMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("renders env page for env view", () => {
+    useAppUiStore.getState().setActiveView("env")
+    render(<AppContent {...createProps()} />)
+
+    expect(screen.getByTestId("env-page")).toBeInTheDocument()
+    expect(envPageMock).toHaveBeenCalledTimes(1)
   })
 
   it("passes retry callback for provider detail view", () => {
