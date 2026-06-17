@@ -3,14 +3,42 @@
 Plugin sources you can add in the Hub (**Add Source**). Add one by pasting its
 URL into **Add Source**.
 
-## Trusted Sources
+Last checked: 2026-06-17.
 
-Maintained or vetted by the project's authors. Safe to add.
+## Curated Sources
 
 | Source | URL | Notes |
 | --- | --- | --- |
-| Upstream | https://github.com/robinebers/openusage | The original OpenUsage project. |
-| Frankie's Collection | https://github.com/FrankieeW/openusage-collection | Default community plugin collection. |
+| Frankie's Collection | https://github.com/FrankieeW/openusage-collection | Default community collection. Includes upstream-style plugins plus extra providers such as DeepSeek and New API. |
+| Upstream | https://github.com/robinebers/openusage | Original OpenUsage project. Useful as the upstream reference source. |
+
+## Community Sources
+
+These sources are public community work. Add them only if you want the listed
+providers and are comfortable trusting that source.
+
+| Provider | Source | Notes |
+| --- | --- | --- |
+| Multiple | https://github.com/barramee27/crossusage | Large community source with extra providers including Ollama, Fireworks AI, Command Code, CrofAI, Neuralwatt, and Cursor Nightly. |
+| OpenRouter | https://github.com/ExTV/openusage/tree/feat/openrouter-provider | Branch source for OpenRouter. Recently synced with upstream when checked. |
+| Warp | https://github.com/JulianKniephoff/openusage/tree/feat/warp | Branch source for Warp. Also includes Gemini and Windsurf. |
+| Pioneer | https://github.com/andrew54068/openusage/tree/feat/pioneer-plugin | Branch source for Pioneer. Also includes Gemini and Windsurf. |
+| Zed AI | https://github.com/rohithgoud30/openusage/tree/add-zed-ai-support | Branch source for Zed AI. |
+
+## Source Identity
+
+Some sources point at a branch, such as:
+
+```text
+https://github.com/ExTV/openusage/tree/feat/openrouter-provider
+```
+
+Hub should keep the branch as part of the source. If the branch is dropped, Hub
+may load the repository's default branch and miss the intended plugin.
+
+Different sources may publish the same `pluginId` and `version`. Hub compares
+the package hash of each `plugins/<id>/` directory to tell whether they are the
+same package or different packages with the same name.
 
 ## Find More Forks
 
@@ -20,22 +48,8 @@ manually via **Add Source**.
 - Forks of upstream: https://github.com/robinebers/openusage/forks
 - Forks of Frankie's Collection: https://github.com/FrankieeW/openusage-collection/forks
 
-## Community Sources
-
-> ⚠️ The entries below are **not tested by me** — try them at your own
-> discretion. If one works (or doesn't), please open an issue/PR so we can
-> update this list.
-
-| Provider | Source | Status |
-| --- | --- | --- |
-| Zed AI | https://github.com/rohithgoud30/openusage/tree/add-zed-ai-support | ⚠️ Untested |
-| Warp | https://github.com/JulianKniephoff/openusage/tree/feat/warp | ⚠️ Untested |
-| Multiple (incl. DeepSeek) | https://github.com/barramee27/crossusage | ⚠️ Untested |
-| OpenRouter | https://github.com/ExTV/openusage/tree/feat/openrouter-provider | ✅ Tested |
-| Pioneer | https://github.com/andrew54068/openusage/tree/feat/pioneer-plugin | ⚠️ Untested |
-
 ## Contributing
 
 Found a useful source? Open a PR adding a row to the table above. Keep the
-**Status** column honest — mark entries `⚠️ Untested` unless you've verified
-them yourself, and note the provider it adds.
+notes honest. Mention the provider, source URL, and whether you have installed
+and run the plugin locally.

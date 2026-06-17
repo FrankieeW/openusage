@@ -18,7 +18,7 @@ Or [download the latest release](https://github.com/FrankieeW/openusage/releases
 
 - **Plugin Hub.** Browse sources, pick plugins, one-click install. Hot-reloads instantly.
 - **Local detection.** Existing plugins from an older install show up automatically.
-- **Multi-source.** Same provider from different sources? Each gets its own entry.
+- **Source-aware.** Same provider from different sources? Hub compares package hashes and warns before replacing anything.
 - **Everything upstream.** All 17 providers, menu bar tracking, global shortcut, local HTTP API, proxy support.
 
 Looking for more? See [recommended sources](docs/recommended-sources.md) for community forks that add extra providers.

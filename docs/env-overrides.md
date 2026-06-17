@@ -25,8 +25,13 @@ disabling one of the cards, or by renaming the variable in one of them.
 
 ## Storage
 
-Cards are persisted to `settings.json` in the app's data directory, along with
-each card's `enabled` flag. Restart OpenUsage after editing the file by hand.
+Cards are persisted to `env.json` in the app's data directory. Each card stores
+its own `enabled` flag; active cards are the only cards sent to plugins.
+
+Older files that still contain `activeGroupIds` are migrated automatically.
+During that migration, `activeGroupIds` is used once to update each card's
+`enabled` flag, then the old key is removed and `envSchemaVersion` is set to
+`2`. Restart OpenUsage after editing the file by hand.
 
 ## Learn More
 

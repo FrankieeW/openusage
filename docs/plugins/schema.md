@@ -36,7 +36,10 @@ plugins/<id>/
   icon.svg       <- plugin icon (required)
 ```
 
-Bundled plugins live under `src-tauri/resources/bundled_plugins/<id>/`.
+Plugin Hub discovers plugins from source repositories or local folders that use
+this same `plugins/<id>/` layout. Installed plugins are copied into the app data
+directory. The app may add `.openusage-install.json` next to an installed
+plugin; publishers should not include that file in source plugins.
 
 ## Manifest Schema (`plugin.json`)
 
@@ -67,6 +70,10 @@ Bundled plugins live under `src-tauri/resources/bundled_plugins/<id>/`.
 | `icon`          | string | Yes      | Relative path to SVG icon file             |
 | `links`         | array  | No       | Optional quick links shown on detail page  |
 | `lines`         | array  | Yes      | Output shape used for loading skeletons    |
+
+The `version` field is the publisher-declared plugin version. Hub also
+calculates a package hash from the files under `plugins/<id>/` so it can tell
+whether two sources provide the exact same package.
 
 Validation rules:
 

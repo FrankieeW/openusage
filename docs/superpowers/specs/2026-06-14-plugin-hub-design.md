@@ -9,6 +9,12 @@ canonical_spec: openspec
 Date: 2026-06-14
 Status: Approved (pending written-spec user review)
 
+Compatibility update: package identity, cross-source comparison, branch source
+handling, and update status are specified in
+`docs/superpowers/specs/2026-06-17-plugin-package-identity-design.md`.
+That document supersedes this file's older `updateAvailable: boolean` and
+version-only install metadata model.
+
 ## Summary
 
 Replace the built-in plugin model with a Hub: a UI page where the user subscribes to one or more sources (GitHub repos, generic git hosts, local paths), browses available plugins from each, and installs/uninstalls them. Discovery/install stays data-driven via existing `plugin.json` schema and `__openusage_plugin.probe(ctx)` contract — Hub is the supply side, plugin engine is the runtime.
@@ -28,7 +34,7 @@ Default source `https://github.com/robinebers/openusage` is pre-registered on fi
 - Plugin ratings, reviews, search, screenshots in browse UI
 - Auto-update push notifications (manual refresh + optional launch-time check only)
 - Marketplace/centralized registry
-- Cross-source plugin ID reconciliation beyond refuse-on-conflict
+- True concurrent runtime installs for the same `pluginId`
 - Generic plugin dependencies or version constraints
 - GitHub-API-optimized fetch path (deferred — `github.rs` ships as TODO stub; GitHub and GenericGit sources both require the local `git` binary this iteration)
 - Symlink-based zero-copy install (rejected: Windows compat)
@@ -119,7 +125,7 @@ pub struct PluginInfo {
     pub unmanaged: bool,
     pub installed_version: Option<String>,
     pub available_version: String,
-    pub update_available: bool,
+    pub package_status: PackageStatus,
 }
 
 pub struct HubBrowseView {
@@ -128,13 +134,17 @@ pub struct HubBrowseView {
     pub skipped: Vec<SkippedPlugin>,  // { path, reason }
 }
 
-pub struct UpdateInfo { pub source_id: String; pub plugin_id: String; pub from: String; pub to: String }
+pub struct UpdateInfo { pub source_id: String; pub plugin_id: String; pub from: String; pub to: String; pub package_hash: String }
 
 pub struct InstallMetadata {
+    pub schema_version: u32,
     pub source_id: String,
     pub source_url: String,
+    pub source_ref: Option<String>,
+    pub source_commit_sha: Option<String>,
     pub plugin_id: String,
     pub installed_version: String,
+    pub package_hash: String,
     pub installed_at: i64,
 }
 
@@ -196,7 +206,7 @@ Input → output:
 2. Conflict check:
    - If `plugins/<id>/.openusage-install.json` exists with a different `source_id` → `HubError::Conflict(other_source_id)`
    - If `plugins/<id>/` exists without Hub metadata → `HubError::Conflict("unmanaged")` so local-dev or manually copied plugin dirs are not overwritten silently
-   - Same source and same version → idempotent success, no recopy
+   - Same source and same package hash -> idempotent success, no recopy
 3. Copy entire dir `cache/<source>/plugins/<id>/` → `plugins/<id>/`
 4. Write `plugins/<id>/.openusage-install.json` with `InstallMetadata`; this file is OpenUsage-owned and is not part of publisher `plugin.json`
 5. Call `plugin_engine::reload(app_handle)` which:
@@ -217,7 +227,8 @@ Tauri event `plugins-changed` payload: `Vec<PluginMeta>` (existing type from `sr
 ```ts
 export type SourceKind = "Github" | "GenericGit" | "LocalPath"
 export interface Source { id: string; label: string; url: string; kind: SourceKind; addedAt: number; lastRefreshedAt: number | null; autoCheck: boolean }
-export interface PluginInfo { id: string; name: string; brandColor: string | null; iconDataUrl: string | null; sourceId: string; installed: boolean; installedSourceId: string | null; unmanaged: boolean; installedVersion: string | null; availableVersion: string; updateAvailable: boolean }
+export type PackageStatus = "notInstalled" | "installed" | "updateAvailable" | "sourceChanged" | "installedNewerThanSource" | "samePackageFromOtherSource" | "differentPackageSamePluginId" | "unmanagedInstalled" | "orphanedSource"
+export interface PluginInfo { id: string; name: string; brandColor: string | null; iconDataUrl: string | null; sourceId: string; installed: boolean; installedSourceId: string | null; unmanaged: boolean; installedVersion: string | null; availableVersion: string; packageHash: string; packageStatus: PackageStatus }
 export interface HubBrowseView { source: Source; available: PluginInfo[]; skipped: SkippedPlugin[] }
 export interface UpdateInfo { sourceId: string; pluginId: string; from: string; to: string }
 export type HubErrorCode = "InvalidUrl" | "GitNotInstalled" | "CloneFailed" | "NotFound" | "Conflict" | "IoError" | "ManifestParse"
@@ -332,13 +343,20 @@ app_data_dir/
 
 ```json
 {
+  "schemaVersion": 2,
   "sourceId": "uuid-xxx",
   "sourceUrl": "https://github.com/robinebers/openusage",
+  "sourceRef": "main",
+  "sourceCommitSha": "abcdef...",
   "pluginId": "codex",
   "installedVersion": "0.6.27",
+  "packageHash": "sha256:...",
   "installedAt": 1234567890
 }
 ```
+
+Legacy metadata without `schemaVersion` is treated as v1 and remains readable.
+Missing `packageHash` is backfilled by hashing the installed plugin directory.
 
 ### Write strategy
 
@@ -404,56 +422,17 @@ Boot cost: ~5-20ms (walk + stat), acceptable.
 
 ## Testing
 
-### Rust unit tests (inline `#[cfg(test)]`)
-
-- `source.rs` URL canonicalization table (12 cases)
-- `registry.rs` round-trip + tmp-file recovery + version migration
-- `install.rs` path validation (entry traversal, id mismatch), sidecar metadata write/read, idempotent same-source install, Conflict on cross-source and unmanaged installs
-- `hub_startup_sweep` orphan detection (3 cases)
-
-### Rust integration test (`src-tauri/tests/hub_e2e.rs`)
-
-`tempfile::TempDir` simulating `app_data_dir`, fixture repo at `tests/fixtures/sample-source/`:
-- 2 valid plugins + 1 malformed `plugin.json`
-- Add LocalPath source → browse → 2 available + 1 skipped
-- Install → file copied → listable via `plugin_engine` reload
-- Install metadata sidecar written → conflict/orphan logic can identify source ownership
-- Uninstall → directory removed
-- Remove source → cache cleared, installed plugin preserved
-
-GitHub real-repo test marked `#[ignore]` (network flakiness). Manual smoke covers.
-
-### JS unit tests
-
-- `src/lib/hub/cache.test.ts`: install/refresh/uninstall loading flip, Conflict error capture, concurrent refresh dedupe
-- `src/lib/hub/labels.test.ts`: snapshot of error code → English string
-- `src/lib/hub/commands.test.ts`: invoke param shape, HubError parsing
-
-### JS component tests (`src/pages/hub-page.test.tsx`)
-
-`@testing-library/react` + `vi.mock("@tauri-apps/api/core")`:
-- Initial load → sources list rendered
-- Source expand → lazy browse, plugin list rendered
-- Install click → invoke called, loading spinner shown
-- Conflict error → toast text shown, Hub action highlights conflicting source, installed state unchanged
-- Add-source modal → URL validation inline error, submit triggers invoke
-- Delete source → confirm flow: cancel no invoke, confirm invokes + card disappears
-- autoCheck toggle → invoke called
-- Orphan plugin renders with `⚠ Source removed`
-
-### Manual smoke
-
-- macOS real GitHub clone → install → menubar shows new provider → probe data correct
-- Offline refresh → toast + cached install works
-- Missing git binary → GitHub/GenericGit source add shows friendly error; LocalPath still works
-- Local path source → edit `plugin.js` → refresh + reinstall → change visible
-- Remove source → orphan marker appears
-- `git pull upstream main` → no conflicts in Hub-touched files
-
-### Not testing
-
-- Playwright E2E — internal app, single new page, component tests cover
-- 80% coverage gate — new module, key functions (source parse, install validate, sweep) fully covered; commands/labels 100%; component coverage focused on interaction paths
+- Rust unit tests cover source URL parsing, registry persistence, install
+  metadata, path validation, conflicts, and orphan sweep.
+- Rust integration coverage uses a LocalPath fixture with valid and malformed
+  plugins.
+- TypeScript tests cover command parameter shape, store loading/error states,
+  labels, component interactions, conflict highlighting, and orphan/unmanaged
+  rendering.
+- Manual smoke covers GitHub install, LocalPath refresh/reinstall, offline
+  refresh, missing git, source removal, and upstream sync conflict surface.
+- Package hash, source ref, metadata v2 migration, and package status tests are
+  specified in `docs/superpowers/specs/2026-06-17-plugin-package-identity-design.md`.
 
 ## Decisions Log
 
@@ -466,7 +445,7 @@ GitHub real-repo test marked `#[ignore]` (network flakiness). Manual smoke cover
 | 5 | Plugin manifest | Existing `plugin.json` schema only, no new `hub.json` |
 | 6 | Architecture | Rust-led (Hub is supply-side to existing engine) |
 | 7 | GitHub API optimization | Deferred; stub module, GitHub/GenericGit require local `git` |
-| 8 | Conflict policy | Refuse install if installed from different source; uninstall first |
+| 8 | Conflict policy | Compare same IDs by package hash; require explicit replace for different packages |
 | 9 | Hot reload | Tauri event `plugins-changed`, existing store listener pattern |
 | 10 | Bundled plugins | Remove bundled plugin copy path; upstream repo is only a default source |
 | 11 | Local path source UX | Badge "Local Source"; install still copies into `app_data_dir/plugins` |
@@ -475,6 +454,7 @@ GitHub real-repo test marked `#[ignore]` (network flakiness). Manual smoke cover
 | 14 | Conflict toast UX | Toast action opens Hub activeView and highlights the conflicting source |
 | 15 | Orphan UI marker | `⚠ Source removed` badge; uninstall still works |
 | 16 | Install ownership | Hub writes `.openusage-install.json`; publisher `plugin.json` stays unchanged |
+| 17 | Package identity | `pluginId + version + packageHash`; source identity records URL, ref, and commit SHA |
 
 ## Out of Scope (future work)
 
