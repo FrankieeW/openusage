@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { labelForError, labelForSourceKind, KNOWN_ERROR_CODES } from "./labels"
-import type { HubError } from "./types"
+import {
+  labelForPluginUpdatedAt,
+  labelForError,
+  labelForSourceKind,
+  labelForSourceTrust,
+  shortPackageHash,
+  KNOWN_ERROR_CODES,
+} from "./labels"
+import type { HubError, Source } from "./types"
 
 describe("labelForError", () => {
   it("returns specific copy for each error code", () => {
@@ -13,6 +20,7 @@ describe("labelForError", () => {
       { code: "Conflict", message: "", context: { otherSourceId: "unmanaged" } },
       { code: "IoError", message: "disk full" },
       { code: "ManifestParse", message: "bad json" },
+      { code: "SourceHealthFailed", message: "source has no valid plugins" },
     ]
     for (const err of samples) {
       const label = labelForError(err)
@@ -28,7 +36,7 @@ describe("labelForError", () => {
   })
 
   it("covers every known error code", () => {
-    expect(KNOWN_ERROR_CODES.length).toBe(7)
+    expect(KNOWN_ERROR_CODES.length).toBe(8)
   })
 })
 
@@ -41,5 +49,49 @@ describe("labelForSourceKind", () => {
 
   it("passes through unknown kinds", () => {
     expect(labelForSourceKind("Other")).toBe("Other")
+  })
+})
+
+describe("labelForSourceTrust", () => {
+  function source(overrides: Partial<Source>): Source {
+    return {
+      id: "src-1",
+      label: "Source",
+      url: "https://github.com/foo/bar",
+      kind: "Github",
+      branch: null,
+      pluginFilter: null,
+      addedAt: 0,
+      lastRefreshedAt: null,
+      autoCheck: false,
+      ...overrides,
+    }
+  }
+
+  it("maps source trust tiers", () => {
+    expect(labelForSourceTrust(source({ id: "default" }))).toBe(
+      "Curated / Default",
+    )
+    expect(labelForSourceTrust(source({ kind: "Github" }))).toBe("Community")
+    expect(labelForSourceTrust(source({ kind: "LocalPath" }))).toBe(
+      "Local Development",
+    )
+    expect(labelForSourceTrust(source({ kind: "GenericGit" }))).toBe(
+      "Unknown Git Source",
+    )
+  })
+
+  it("shortens sha256 hashes for previews", () => {
+    expect(shortPackageHash("sha256:1234567890abcdef")).toBe(
+      "sha256:1234567890ab",
+    )
+    expect(shortPackageHash("sha256:fixture")).toBe("sha256:fixture")
+  })
+
+  it("formats plugin updated dates", () => {
+    expect(labelForPluginUpdatedAt(Date.UTC(2026, 5, 17))).toBe(
+      "Updated 2026-06-17",
+    )
+    expect(labelForPluginUpdatedAt(null)).toBeNull()
   })
 })

@@ -48,6 +48,7 @@ export interface PluginInfo {
   unmanaged: boolean
   installedVersion: string | null
   availableVersion: string
+  updatedAt: number | null
   packageHash: string
   packageStatus: PackageStatus
   updateAvailable: boolean
@@ -58,10 +59,19 @@ export interface SkippedPlugin {
   reason: string
 }
 
+export interface SourceSnapshot {
+  branch: string | null
+  commitSha: string | null
+  checkedAt: number
+  discoveredCount: number
+  skippedCount: number
+}
+
 export interface HubBrowseView {
   source: Source
   available: PluginInfo[]
   skipped: SkippedPlugin[]
+  snapshot: SourceSnapshot
 }
 
 export interface UpdateInfo {
@@ -80,6 +90,7 @@ export type HubErrorCode =
   | "Conflict"
   | "IoError"
   | "ManifestParse"
+  | "SourceHealthFailed"
 
 export interface HubError {
   code: HubErrorCode

@@ -2,11 +2,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { initHubSubscriptions, useHubStore } from "@/lib/hub/cache"
 import { labelForError } from "@/lib/hub/labels"
-import { AlertCircle, Plus, RefreshCw } from "lucide-react"
 import { useEffect, useState } from "react"
 import { SourceCard } from "@/components/hub/source-card"
 import { AddSourceDialog } from "@/components/hub/add-source-dialog"
 import { PluginBrowser } from "@/components/hub/plugin-card"
+import type { SkippedPlugin } from "@/lib/hub/types"
 
 export function HubPage() {
   const sources = useHubStore((s) => s.sources)
@@ -15,6 +15,7 @@ export function HubPage() {
   const refreshSources = useHubStore((s) => s.refreshSources)
   const localPlugins = useHubStore((s) => s.localPlugins)
   const [adding, setAdding] = useState(false)
+  const skippedReasons = skippedReasonsFromError(error)
 
   useEffect(() => {
     refreshSources()
@@ -37,7 +38,6 @@ export function HubPage() {
             onClick={() => window.location.reload()}
             data-testid="hub-reload-button"
           >
-            <RefreshCw size={14} />
             Reload
           </Button>
           <Button
@@ -45,7 +45,6 @@ export function HubPage() {
             onClick={() => setAdding(true)}
             data-testid="hub-add-source-button"
           >
-            <Plus size={14} />
             Add Source
           </Button>
         </div>
@@ -53,13 +52,29 @@ export function HubPage() {
 
       {error && (
         <Alert variant="destructive" data-testid="hub-error-alert">
-          <AlertCircle size={14} />
-          <AlertTitle>Hub error</AlertTitle>
-          <AlertDescription className="flex items-start justify-between gap-3">
-            <span>{labelForError(error)}</span>
-            <Button size="xs" variant="ghost" onClick={clearError}>
-              Dismiss
-            </Button>
+          <AlertTitle>Hub Error</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <span>{labelForError(error)}</span>
+              <Button size="xs" variant="ghost" onClick={clearError}>
+                Dismiss
+              </Button>
+            </div>
+            {skippedReasons.length > 0 && (
+              <details open data-testid="hub-error-skipped-reasons">
+                <summary className="cursor-pointer text-xs">
+                  Skipped Plugin Reasons
+                </summary>
+                <ul className="mt-2 list-disc pl-4 text-xs">
+                  {skippedReasons.map((skipped) => (
+                    <li key={`${skipped.path}:${skipped.reason}`}>
+                      <code>{skipped.path.split("/").slice(-2).join("/")}</code>
+                      : {skipped.reason}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -103,4 +118,18 @@ export function HubPage() {
       {adding && <AddSourceDialog onClose={() => setAdding(false)} />}
     </div>
   )
+}
+
+function skippedReasonsFromError(
+  error: ReturnType<typeof useHubStore.getState>["error"],
+): SkippedPlugin[] {
+  const skipped = error?.context?.skipped
+  if (!Array.isArray(skipped)) return []
+  return skipped.filter(isSkippedPlugin)
+}
+
+function isSkippedPlugin(value: unknown): value is SkippedPlugin {
+  if (typeof value !== "object" || value === null) return false
+  const record = value as Record<string, unknown>
+  return typeof record.path === "string" && typeof record.reason === "string"
 }

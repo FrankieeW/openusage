@@ -38,12 +38,20 @@ function sampleBrowse(sourceId: string, pluginId: string): HubBrowseView {
         unmanaged: false,
         installedVersion: null,
         availableVersion: "0.6.27",
+        updatedAt: null,
         packageHash: "sha256:fixture",
         packageStatus: "notInstalled",
         updateAvailable: false,
       },
     ],
     skipped: [],
+    snapshot: {
+      branch: null,
+      commitSha: "abcdef",
+      checkedAt: 123,
+      discoveredCount: 1,
+      skippedCount: 0,
+    },
   }
 }
 
@@ -261,6 +269,55 @@ describe("useHubStore", () => {
       .updateSource("s1", { label: "x" })
     expect(result).toBeNull()
     expect(useHubStore.getState().error?.code).toBe("NotFound")
+  })
+
+  it("refreshSource replaces source with refreshed source metadata", async () => {
+    useHubStore.setState({
+      sources: [sampleSource("s1")],
+      browseBySource: {},
+    })
+    const refreshedSource: Source = {
+      ...sampleSource("s1"),
+      lastRefreshedAt: 987,
+    }
+    const refreshedBrowse: HubBrowseView = {
+      ...sampleBrowse("s1", "p1"),
+      source: refreshedSource,
+    }
+    invokeMock.mockResolvedValueOnce(refreshedBrowse)
+
+    const result = await useHubStore.getState().refreshSource("s1")
+
+    expect(result).toEqual(refreshedBrowse)
+    expect(invokeMock).toHaveBeenCalledWith("hub_refresh_source", {
+      sourceId: "s1",
+    })
+    expect(useHubStore.getState().sources[0].lastRefreshedAt).toBe(987)
+    expect(useHubStore.getState().browseBySource.s1).toEqual(refreshedBrowse)
+  })
+
+  it("switchSource calls hub_switch_source and refreshes source browse view", async () => {
+    useHubStore.setState({
+      sources: [sampleSource("s1")],
+      browseBySource: { s1: sampleBrowse("s1", "p1") },
+    })
+    const refreshedBrowse = sampleBrowse("s1", "p1")
+    invokeMock.mockResolvedValueOnce(undefined)
+    invokeMock.mockResolvedValueOnce(refreshedBrowse)
+
+    const promise = useHubStore.getState().switchSource("s1", "p1")
+
+    expect(useHubStore.getState().loading.perPlugin["s1:p1"]).toBe("install")
+    await promise
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "hub_switch_source", {
+      sourceId: "s1",
+      pluginId: "p1",
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "hub_browse_source", {
+      sourceId: "s1",
+    })
+    expect(useHubStore.getState().browseBySource.s1).toEqual(refreshedBrowse)
+    expect(useHubStore.getState().loading.perPlugin["s1:p1"]).toBeNull()
   })
 
   it("addSource returns null and captures error on failure", async () => {

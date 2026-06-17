@@ -16,9 +16,9 @@ import {
   __resetHubSubscriptionsForTesting,
   useHubStore,
 } from "@/lib/hub/cache"
-import type { HubBrowseView, Source } from "@/lib/hub/types"
+import type { HubBrowseView, PackageStatus, PluginInfo, Source } from "@/lib/hub/types"
 
-function sampleSource(id: string): Source {
+function sampleSource(id: string, overrides: Partial<Source> = {}): Source {
   return {
     id,
     label: id,
@@ -29,30 +29,56 @@ function sampleSource(id: string): Source {
     addedAt: 0,
     lastRefreshedAt: null,
     autoCheck: false,
+    ...overrides,
   }
 }
 
-function sampleBrowse(sourceId: string): HubBrowseView {
+function samplePlugin(
+  sourceId: string,
+  overrides: Partial<PluginInfo> = {},
+): PluginInfo {
   return {
-    source: sampleSource(sourceId),
-    available: [
-      {
-        id: "claude",
-        name: "Claude",
-        brandColor: "#FF0000",
-        iconDataUrl: null,
-        sourceId,
-        installed: false,
-        installedSourceId: null,
-        unmanaged: false,
-        installedVersion: null,
-        availableVersion: "0.6.27",
-        packageHash: "sha256:fixture",
-        packageStatus: "notInstalled",
-        updateAvailable: false,
-      },
-    ],
+    id: "claude",
+    name: "Claude",
+    brandColor: "#FF0000",
+    iconDataUrl: null,
+    sourceId,
+    installed: false,
+    installedSourceId: null,
+    unmanaged: false,
+    installedVersion: null,
+    availableVersion: "0.6.27",
+    updatedAt: null,
+    packageHash: "sha256:fixture",
+    packageStatus: "notInstalled",
+    updateAvailable: false,
+    ...overrides,
+  }
+}
+
+function sampleBrowse(
+  sourceId: string,
+  options: {
+    source?: Partial<Source>
+    plugin?: Partial<PluginInfo>
+    packageStatus?: PackageStatus
+  } = {},
+): HubBrowseView {
+  const packageStatus = options.packageStatus ?? options.plugin?.packageStatus
+  return {
+    source: sampleSource(sourceId, options.source),
+    available: [samplePlugin(sourceId, {
+      ...(packageStatus ? { packageStatus } : {}),
+      ...options.plugin,
+    })],
     skipped: [],
+    snapshot: {
+      branch: options.source?.branch ?? null,
+      commitSha: "abcdef1234567890",
+      checkedAt: 123,
+      discoveredCount: 1,
+      skippedCount: 0,
+    },
   }
 }
 
@@ -150,7 +176,7 @@ describe("HubPage", () => {
     expect(browseCallCountAfter).toBe(browseCallCount)
   })
 
-  it("install button triggers hub_install", async () => {
+  it("install button opens a preview before invoking hub_install", async () => {
     useHubStore.setState({
       sources: [sampleSource("s1")],
       browseBySource: { s1: sampleBrowse("s1") },
@@ -163,12 +189,154 @@ describe("HubPage", () => {
     fireEvent.click(toggle)
     const installBtn = await screen.findByTestId("hub-install-button")
     fireEvent.click(installBtn)
+    expect(invokeMock).not.toHaveBeenCalledWith("hub_install", {
+      sourceId: "s1",
+      pluginId: "claude",
+    })
+    expect(await screen.findByTestId("hub-install-preview")).toBeInTheDocument()
+    expect(screen.getByText("Plugin ID")).toBeInTheDocument()
+    expect(screen.getByText("sha256:fixture")).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId("hub-install-preview-confirm"))
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith("hub_install", {
         sourceId: "s1",
         pluginId: "claude",
       })
     })
+  })
+
+  it("unknown git source install preview shows a trust warning", async () => {
+    const source = sampleSource("s1", {
+      kind: "GenericGit",
+      url: "https://gitlab.com/foo/bar",
+    })
+    useHubStore.setState({
+      sources: [source],
+      browseBySource: {
+        s1: sampleBrowse("s1", { source }),
+      },
+    })
+    render(<HubPage />)
+    fireEvent.click(await screen.findByTestId("hub-source-toggle"))
+    fireEvent.click(await screen.findByTestId("hub-install-button"))
+
+    expect(await screen.findByTestId("hub-install-preview")).toBeInTheDocument()
+    expect(screen.getByTestId("hub-install-preview-warning")).toHaveTextContent(
+      /Unknown Git Source/i,
+    )
+  })
+
+  it("different package with the same plugin id requires switch-source confirmation", async () => {
+    useHubStore.setState({
+      sources: [sampleSource("s1")],
+      browseBySource: {
+        s1: sampleBrowse("s1", {
+          packageStatus: "differentPackageSamePluginId",
+          plugin: {
+            installedSourceId: "s2",
+            installedVersion: "0.6.26",
+          },
+        }),
+      },
+    })
+    render(<HubPage />)
+    fireEvent.click(await screen.findByTestId("hub-source-toggle"))
+    fireEvent.click(await screen.findByTestId("hub-switch-source-button"))
+
+    expect(await screen.findByTestId("hub-install-preview")).toBeInTheDocument()
+    expect(screen.getByTestId("hub-install-preview-warning")).toHaveTextContent(
+      /Different Package/i,
+    )
+    fireEvent.click(screen.getByTestId("hub-install-preview-confirm"))
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("hub_switch_source", {
+        sourceId: "s1",
+        pluginId: "claude",
+      })
+    })
+  })
+
+  it("installed newer than source does not offer downgrade by default", async () => {
+    useHubStore.setState({
+      sources: [sampleSource("s1")],
+      browseBySource: {
+        s1: sampleBrowse("s1", {
+          packageStatus: "installedNewerThanSource",
+          plugin: {
+            installed: true,
+            installedSourceId: "s1",
+            installedVersion: "0.6.28",
+          },
+        }),
+      },
+    })
+    render(<HubPage />)
+    fireEvent.click(await screen.findByTestId("hub-source-toggle"))
+
+    expect(screen.getByText("Installed Newer Than Source")).toBeInTheDocument()
+    expect(screen.queryByTestId("hub-install-button")).not.toBeInTheDocument()
+  })
+
+  it("shows plugin updated date when the source provides it", async () => {
+    useHubStore.setState({
+      sources: [sampleSource("s1")],
+      browseBySource: {
+        s1: sampleBrowse("s1", {
+          plugin: {
+            updatedAt: Date.UTC(2026, 5, 17),
+          } as Partial<PluginInfo>,
+        }),
+      },
+    })
+    render(<HubPage />)
+    fireEvent.click(await screen.findByTestId("hub-source-toggle"))
+
+    expect(screen.getByText("Updated 2026-06-17")).toBeInTheDocument()
+  })
+
+  it("shows source snapshot details when a source is expanded", async () => {
+    const source = sampleSource("s1", {
+      branch: "feat/openrouter",
+      lastRefreshedAt: 123,
+    })
+    useHubStore.setState({
+      sources: [source],
+      browseBySource: {
+        s1: sampleBrowse("s1", {
+          source,
+        }),
+      },
+    })
+
+    render(<HubPage />)
+    fireEvent.click(await screen.findByTestId("hub-source-toggle"))
+
+    expect(screen.getByText("Branch feat/openrouter")).toBeInTheDocument()
+    expect(screen.getByText("Commit abcdef123456")).toBeInTheDocument()
+    expect(screen.getByText("1 Discovered")).toBeInTheDocument()
+    expect(screen.getByText("0 Skipped")).toBeInTheDocument()
+  })
+
+  it("shows source health skipped reasons in the error alert", async () => {
+    render(<HubPage />)
+    useHubStore.setState({
+      error: {
+        code: "SourceHealthFailed",
+        message: "source has no valid plugins",
+        context: {
+          skipped: [
+            {
+              path: "/tmp/plugins/bad/plugin.json",
+              reason: "id mismatch",
+            },
+          ],
+        },
+      },
+    })
+
+    expect(await screen.findByTestId("hub-error-alert")).toBeInTheDocument()
+    expect(screen.getByText(/id mismatch/)).toBeInTheDocument()
   })
 
   it("delete source requires confirmation before invoking removeSource", async () => {

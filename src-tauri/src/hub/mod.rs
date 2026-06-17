@@ -1,5 +1,6 @@
 #![allow(dead_code)] // many helpers are wired by the Tauri command layer in a later commit
 
+pub mod cache_index;
 pub mod git_ops;
 pub mod install;
 pub mod registry;
@@ -33,6 +34,7 @@ pub enum HubErrorCode {
     Conflict,
     IoError,
     ManifestParse,
+    SourceHealthFailed,
 }
 
 impl std::fmt::Display for HubError {
@@ -95,6 +97,21 @@ impl HubError {
     pub fn manifest_parse(msg: impl Into<String>) -> Self {
         Self::new(HubErrorCode::ManifestParse, msg)
     }
+    pub fn source_health_failed(
+        message: impl Into<String>,
+        available_count: usize,
+        skipped: &[SkippedPlugin],
+    ) -> Self {
+        Self::with_context(
+            HubErrorCode::SourceHealthFailed,
+            message,
+            serde_json::json!({
+                "availableCount": available_count,
+                "skippedCount": skipped.len(),
+                "skipped": skipped,
+            }),
+        )
+    }
 }
 
 impl From<install::InstallError> for HubError {
@@ -140,6 +157,7 @@ pub struct PluginInfo {
     pub unmanaged: bool,
     pub installed_version: Option<String>,
     pub available_version: String,
+    pub updated_at: Option<i64>,
     pub package_hash: String,
     pub package_status: PackageStatus,
     pub update_available: bool,
@@ -159,10 +177,20 @@ pub enum PackageStatus {
     OrphanedSource,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkippedPlugin {
     pub path: String,
     pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSnapshot {
+    pub branch: Option<String>,
+    pub commit_sha: Option<String>,
+    pub checked_at: i64,
+    pub discovered_count: usize,
+    pub skipped_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -171,6 +199,7 @@ pub struct HubBrowseView {
     pub source: Source,
     pub available: Vec<PluginInfo>,
     pub skipped: Vec<SkippedPlugin>,
+    pub snapshot: SourceSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -304,6 +333,7 @@ pub fn discover_cache_plugins(
             .and_then(|v| v.as_str())
             .unwrap_or("0.0.0")
             .to_string();
+        let updated_at = parse_manifest_updated_at(&value);
         let brand_color = value
             .get("brandColor")
             .and_then(|v| v.as_str())
@@ -362,6 +392,7 @@ pub fn discover_cache_plugins(
             unmanaged,
             installed_version,
             available_version: version,
+            updated_at,
             package_hash,
             package_status,
             update_available,
@@ -372,12 +403,147 @@ pub fn discover_cache_plugins(
     (available, skipped)
 }
 
+fn discover_cache_plugins_with_index(
+    cache_dir: &Path,
+    source_id: &str,
+    plugins_dir: &Path,
+    installed: &InstalledLookup,
+    plugin_filter: Option<&[String]>,
+    commit_sha: Option<String>,
+) -> (Vec<PluginInfo>, Vec<SkippedPlugin>) {
+    if let Some(commit_sha) = commit_sha.as_deref() {
+        if let Some(index) = cache_index::load(cache_dir, source_id, commit_sha, plugin_filter) {
+            let available = index
+                .plugins
+                .iter()
+                .map(|plugin| cached_plugin_to_info(plugin, source_id, plugins_dir, installed))
+                .collect::<Vec<_>>();
+            return (available, index.skipped);
+        }
+    }
+
+    let (available, skipped) =
+        discover_cache_plugins(cache_dir, source_id, plugins_dir, installed, plugin_filter);
+    if let Some(commit_sha) = commit_sha.as_deref() {
+        let index = cache_index::build(
+            source_id,
+            commit_sha,
+            plugin_filter,
+            now_millis(),
+            &available,
+            &skipped,
+        );
+        if let Err(err) = cache_index::write(cache_dir, &index) {
+            log::warn!("cache index write failed for {}: {}", source_id, err);
+        }
+    }
+    (available, skipped)
+}
+
+fn cached_plugin_to_info(
+    plugin: &cache_index::CachedPluginSummary,
+    source_id: &str,
+    plugins_dir: &Path,
+    installed: &InstalledLookup,
+) -> PluginInfo {
+    let (installed_flag, installed_source_id, installed_version, unmanaged, package_status) =
+        match installed.get(&plugin.id) {
+            Some(info) if info.source_id == source_id => (
+                true,
+                Some(info.source_id.clone()),
+                Some(info.version.clone()),
+                false,
+                classify_same_source_package(info, &plugin.available_version, &plugin.package_hash),
+            ),
+            Some(info) => (
+                false,
+                Some(info.source_id.clone()),
+                Some(info.version.clone()),
+                false,
+                classify_other_source_package(info, &plugin.package_hash),
+            ),
+            None => {
+                if plugins_dir.join(&plugin.id).is_dir() {
+                    (true, None, None, true, PackageStatus::UnmanagedInstalled)
+                } else {
+                    (false, None, None, false, PackageStatus::NotInstalled)
+                }
+            }
+        };
+
+    PluginInfo {
+        id: plugin.id.clone(),
+        name: plugin.name.clone(),
+        brand_color: plugin.brand_color.clone(),
+        icon_data_url: plugin.icon_data_url.clone(),
+        source_id: source_id.to_string(),
+        installed: installed_flag,
+        installed_source_id,
+        unmanaged,
+        installed_version,
+        available_version: plugin.available_version.clone(),
+        updated_at: plugin.updated_at,
+        package_hash: plugin.package_hash.clone(),
+        package_status,
+        update_available: package_status == PackageStatus::UpdateAvailable,
+    }
+}
+
+fn validate_source_health(
+    cache_dir: &Path,
+    source_id: &str,
+    plugins_dir: &Path,
+    plugin_filter: Option<&[String]>,
+) -> Result<(Vec<PluginInfo>, Vec<SkippedPlugin>), HubError> {
+    if !cache_dir.join("plugins").is_dir() {
+        return Err(HubError::source_health_failed(
+            "source has no plugins directory",
+            0,
+            &[],
+        ));
+    }
+
+    let installed = InstalledLookup::new();
+    let (available, skipped) =
+        discover_cache_plugins(cache_dir, source_id, plugins_dir, &installed, plugin_filter);
+    if available.is_empty() {
+        return Err(HubError::source_health_failed(
+            "source has no valid plugins",
+            available.len(),
+            &skipped,
+        ));
+    }
+    Ok((available, skipped))
+}
+
 fn read_icon_data_url(plugin_dir: &Path, icon_filename: &str) -> Option<String> {
     let path = plugin_dir.join(icon_filename);
     let bytes = std::fs::read(&path).ok()?;
     use base64::Engine;
     let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Some(format!("data:image/svg+xml;base64,{}", encoded))
+}
+
+fn parse_manifest_updated_at(value: &serde_json::Value) -> Option<i64> {
+    let raw = value.get("updatedAt")?;
+    if let Some(ms) = raw.as_i64() {
+        return Some(normalize_epoch_millis(ms));
+    }
+    let text = raw.as_str()?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let parsed =
+        time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
+    Some(parsed.unix_timestamp().saturating_mul(1_000))
+}
+
+fn normalize_epoch_millis(value: i64) -> i64 {
+    if value > 0 && value < 10_000_000_000 {
+        value.saturating_mul(1_000)
+    } else {
+        value
+    }
 }
 
 fn classify_same_source_package(
@@ -456,6 +622,9 @@ pub fn build_installed_lookup(plugins_dir: &Path) -> InstalledLookup<'_> {
             continue;
         }
         let dir_name = entry.file_name().to_string_lossy().to_string();
+        if install::is_internal_dir_name(&dir_name) {
+            continue;
+        }
         if let Some(meta) = install::read_install_metadata(plugins_dir, &dir_name) {
             let package_hash = if meta.package_hash.is_empty() {
                 match install::package_hash(&path) {
@@ -524,6 +693,22 @@ pub fn normalize_plugin_filter(filter: Option<Vec<String>>) -> Option<Vec<String
         }
     }
     if out.is_empty() { None } else { Some(out) }
+}
+
+fn source_snapshot(
+    source: &Source,
+    commit_sha: Option<String>,
+    discovered_count: usize,
+    skipped_count: usize,
+    checked_at: i64,
+) -> SourceSnapshot {
+    SourceSnapshot {
+        branch: source.branch.clone(),
+        commit_sha,
+        checked_at,
+        discovered_count,
+        skipped_count,
+    }
 }
 
 pub fn derive_label_from_url(url: &str) -> String {
@@ -643,7 +828,7 @@ pub async fn hub_add_source(
     let label = label.unwrap_or_else(|| derive_label_from_url(&canonical.url));
     let plugin_filter = normalize_plugin_filter(plugin_filter);
     let now = now_millis();
-    let new_source = Source {
+    let mut new_source = Source {
         id: id.clone(),
         label,
         url: url.clone(),
@@ -657,9 +842,9 @@ pub async fn hub_add_source(
 
     // Clone first (network/disk I/O), then commit to registry only if clone
     // succeeds — avoids half-state if clone fails.
-    let cache_path = {
+    let (cache_path, plugins_dir) = {
         let s = lock_state(&state)?;
-        cache_dir_for(&s.hub_dir, &id)
+        (cache_dir_for(&s.hub_dir, &id), s.plugins_dir.clone())
     };
     match kind {
         SourceKind::Github | SourceKind::GenericGit => {
@@ -673,6 +858,16 @@ pub async fn hub_add_source(
             install::copy_dir_to(src, &cache_path).map_err(HubError::from)?;
         }
     }
+    if let Err(err) = validate_source_health(
+        &cache_path,
+        &id,
+        &plugins_dir,
+        new_source.plugin_filter.as_deref(),
+    ) {
+        let _ = std::fs::remove_dir_all(&cache_path);
+        return Err(err);
+    }
+    new_source.last_refreshed_at = Some(now_millis());
 
     let mut s = lock_state(&state)?;
     s.hub_registry.sources.push(new_source.clone());
@@ -757,6 +952,9 @@ pub async fn hub_remove_source(
                     continue;
                 }
                 let dir_name = entry.file_name().to_string_lossy().to_string();
+                if install::is_internal_dir_name(&dir_name) {
+                    continue;
+                }
                 if let Some(mut meta) = install::read_install_metadata(&plugins_dir, &dir_name) {
                     if meta.source_id == source_id {
                         meta.source_id = String::new();
@@ -801,18 +999,43 @@ pub async fn hub_browse_source(
             }
         }
     }
+    let commit_sha = match source.kind {
+        SourceKind::Github | SourceKind::GenericGit => {
+            match git_ops::head_commit(&cache_path).await {
+                Ok(sha) => Some(sha),
+                Err(err) => {
+                    log::warn!(
+                        "hub_browse_source: cannot read commit for {}: {}",
+                        source_id,
+                        err
+                    );
+                    None
+                }
+            }
+        }
+        SourceKind::LocalPath => None,
+    };
     let installed = build_installed_lookup(&plugins_dir);
-    let (available, skipped) = discover_cache_plugins(
+    let (available, skipped) = discover_cache_plugins_with_index(
         &cache_path,
         &source_id,
         &plugins_dir,
         &installed,
         source.plugin_filter.as_deref(),
+        commit_sha.clone(),
+    );
+    let snapshot = source_snapshot(
+        &source,
+        commit_sha,
+        available.len(),
+        skipped.len(),
+        now_millis(),
     );
     Ok(HubBrowseView {
         source,
         available,
         skipped,
+        snapshot,
     })
 }
 
@@ -881,7 +1104,6 @@ pub async fn hub_install(
         None
     };
 
-    install::copy_plugin_to_install_dir(&source_plugin_dir, &plugins_dir, &install_dir_name)?;
     let metadata = install::InstallMetadata {
         schema_version: install::INSTALL_METADATA_SCHEMA_VERSION,
         source_id: source.id.clone(),
@@ -895,7 +1117,102 @@ pub async fn hub_install(
         package_hash,
         installed_at: now_millis(),
     };
-    install::write_install_metadata(&plugins_dir, &install_dir_name, &metadata)?;
+    install::switch_plugin_install_dir_with_metadata(
+        &source_plugin_dir,
+        &plugins_dir,
+        &install_dir_name,
+        &install_dir_name,
+        &metadata,
+    )?;
+
+    reload_plugins_and_emit(&app, &state)?;
+    report_orphans(&app, &state);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hub_switch_source(
+    app: AppHandle,
+    state: State<'_, Mutex<crate::AppState>>,
+    source_id: String,
+    plugin_id: String,
+) -> Result<(), HubError> {
+    let (hub_dir, plugins_dir, source) = {
+        let s = lock_state(&state)?;
+        let source = s
+            .hub_registry
+            .sources
+            .iter()
+            .find(|src| src.id == source_id)
+            .cloned()
+            .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
+        (s.hub_dir.clone(), s.plugins_dir.clone(), source)
+    };
+
+    let old_install_dir_name = find_install_dir(&plugins_dir, &plugin_id, "")
+        .ok_or_else(|| HubError::not_found(format!("installed plugin {}", plugin_id)))?;
+    let safe_label = sanitize_label(&source.label);
+    let new_install_dir_name = if safe_label.is_empty() || safe_label == "local" {
+        plugin_id.clone()
+    } else {
+        format!("{}__{}", plugin_id, safe_label)
+    };
+
+    let source_plugin_dir = cache_dir_for(&hub_dir, &source_id)
+        .join("plugins")
+        .join(&plugin_id);
+    if !source_plugin_dir.is_dir() {
+        return Err(HubError::not_found(format!(
+            "plugin {} in source {}",
+            plugin_id, source_id
+        )));
+    }
+    let manifest_text = std::fs::read_to_string(source_plugin_dir.join("plugin.json"))
+        .map_err(|e| HubError::io(e.to_string()))?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_text)
+        .map_err(|e| HubError::manifest_parse(e.to_string()))?;
+    let version = manifest
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.0.0")
+        .to_string();
+    let package_hash = install::package_hash(&source_plugin_dir)?;
+    let source_commit_sha = if matches!(source.kind, SourceKind::Github | SourceKind::GenericGit) {
+        match git_ops::head_commit(&cache_dir_for(&hub_dir, &source_id)).await {
+            Ok(sha) => Some(sha),
+            Err(err) => {
+                log::warn!(
+                    "hub_switch_source: cannot read source commit for {}: {}",
+                    source_id,
+                    err
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let metadata = install::InstallMetadata {
+        schema_version: install::INSTALL_METADATA_SCHEMA_VERSION,
+        source_id: source.id.clone(),
+        source_url: source.url.clone(),
+        source_label: source.label.clone(),
+        source_kind: Some(source.kind),
+        source_ref: source.branch.clone(),
+        source_commit_sha,
+        plugin_id: plugin_id.clone(),
+        installed_version: version,
+        package_hash,
+        installed_at: now_millis(),
+    };
+    install::switch_plugin_install_dir_with_metadata(
+        &source_plugin_dir,
+        &plugins_dir,
+        &old_install_dir_name,
+        &new_install_dir_name,
+        &metadata,
+    )?;
 
     reload_plugins_and_emit(&app, &state)?;
     report_orphans(&app, &state);
@@ -962,6 +1279,9 @@ fn find_install_dir(plugins_dir: &Path, plugin_id: &str, source_id: &str) -> Opt
             continue;
         }
         let dir_name = entry.file_name().to_string_lossy().to_string();
+        if install::is_internal_dir_name(&dir_name) {
+            continue;
+        }
         match install::read_install_metadata(plugins_dir, &dir_name) {
             Some(meta) => {
                 log::debug!(
@@ -1021,19 +1341,58 @@ pub async fn hub_refresh_source(
             git_ops::fetch_and_reset(&cache_path, source.branch.as_deref()).await?;
         }
     }
+    let refreshed_at = now_millis();
+    let source = {
+        let mut s = lock_state(&state)?;
+        let target = s
+            .hub_registry
+            .sources
+            .iter_mut()
+            .find(|src| src.id == source_id)
+            .ok_or_else(|| HubError::not_found(format!("source {}", source_id)))?;
+        target.last_refreshed_at = Some(refreshed_at);
+        let updated = target.clone();
+        registry::write(&s.hub_dir, &s.hub_registry)?;
+        updated
+    };
 
+    let commit_sha = match source.kind {
+        SourceKind::Github | SourceKind::GenericGit => {
+            match git_ops::head_commit(&cache_path).await {
+                Ok(sha) => Some(sha),
+                Err(err) => {
+                    log::warn!(
+                        "hub_refresh_source: cannot read commit for {}: {}",
+                        source_id,
+                        err
+                    );
+                    None
+                }
+            }
+        }
+        SourceKind::LocalPath => None,
+    };
     let installed = build_installed_lookup(&plugins_dir);
-    let (available, skipped) = discover_cache_plugins(
+    let (available, skipped) = discover_cache_plugins_with_index(
         &cache_path,
         &source_id,
         &plugins_dir,
         &installed,
         source.plugin_filter.as_deref(),
+        commit_sha.clone(),
+    );
+    let snapshot = source_snapshot(
+        &source,
+        commit_sha,
+        available.len(),
+        skipped.len(),
+        refreshed_at,
     );
     Ok(HubBrowseView {
         source,
         available,
         skipped,
+        snapshot,
     })
 }
 
@@ -1087,16 +1446,29 @@ pub async fn hub_check_updates(
                 continue;
             }
         }
+        let commit_sha = if matches!(kind, SourceKind::Github | SourceKind::GenericGit) {
+            match git_ops::head_commit(&cache_path).await {
+                Ok(sha) => Some(sha),
+                Err(err) => {
+                    log::warn!("hub_check_updates: cannot read commit for {}: {}", id, err);
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let installed = build_installed_lookup(&plugins_dir);
-        let (available, _) = discover_cache_plugins(
+        let (available, _) = discover_cache_plugins_with_index(
             &cache_path,
             &id,
             &plugins_dir,
             &installed,
             plugin_filter_lookup(id, &sources),
+            commit_sha,
         );
         for plugin in available {
-            if let (true, Some(from)) = (plugin.update_available, plugin.installed_version.clone())
+            if let (PackageStatus::UpdateAvailable, Some(from)) =
+                (plugin.package_status, plugin.installed_version.clone())
             {
                 updates.push(UpdateInfo {
                     source_id: id.clone(),
@@ -1140,6 +1512,9 @@ pub async fn hub_list_local_plugins(
             continue;
         }
         let id = entry.file_name().to_string_lossy().to_string();
+        if install::is_internal_dir_name(&id) {
+            continue;
+        }
         // Skip anything that already has Hub metadata — those belong to a Hub source
         if install::read_install_metadata(&plugins_dir, &id).is_some() {
             continue;
@@ -1161,6 +1536,7 @@ pub async fn hub_list_local_plugins(
             .and_then(|v| v.as_str())
             .unwrap_or("0.0.0")
             .to_string();
+        let updated_at = parse_manifest_updated_at(&value);
         let brand_color = value
             .get("brandColor")
             .and_then(|v| v.as_str())
@@ -1182,6 +1558,7 @@ pub async fn hub_list_local_plugins(
             unmanaged: true,
             installed_version: Some(version.clone()),
             available_version: version,
+            updated_at,
             package_hash: install::package_hash(&path)?,
             package_status: PackageStatus::UnmanagedInstalled,
             update_available: false,
@@ -1263,6 +1640,38 @@ mod tests {
                 .all(|p| p.brand_color.as_deref() == Some("#FF00FF"))
         );
         assert!(skipped.is_empty());
+    }
+
+    #[test]
+    fn discover_preserves_manifest_updated_at() {
+        let cache = tempdir("cache-updated-at");
+        let dir = cache.join("plugins").join("claude");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("plugin.json"),
+            r##"{
+  "schemaVersion": 1,
+  "id": "claude",
+  "name": "Claude",
+  "version": "0.6.27",
+  "updatedAt": 1781654400000,
+  "entry": "plugin.js",
+  "icon": "icon.svg",
+  "brandColor": "#000000",
+  "lines": []
+}"##,
+        )
+        .unwrap();
+        fs::write(dir.join("plugin.js"), "globalThis.__openusage_plugin={};").unwrap();
+        fs::write(dir.join("icon.svg"), "<svg/>").unwrap();
+
+        let plugins = tempdir("plugins-updated-at");
+        let (available, skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &InstalledLookup::new(), None);
+        assert!(skipped.is_empty());
+        let json = serde_json::to_value(&available[0]).unwrap();
+
+        assert_eq!(json["updatedAt"], serde_json::json!(1781654400000_i64));
     }
 
     #[test]
@@ -1556,6 +1965,126 @@ mod tests {
             discover_cache_plugins(&cache, "src-1", &plugins, &lookup, Some(&filter));
         assert_eq!(available.len(), 1);
         assert_eq!(available[0].id, "claude");
+    }
+
+    #[test]
+    fn source_snapshot_records_branch_counts_and_checked_time() {
+        let source = Source {
+            id: "src-1".to_string(),
+            label: "Source".to_string(),
+            url: "https://github.com/foo/bar".to_string(),
+            kind: SourceKind::Github,
+            branch: Some("feat/plugins".to_string()),
+            plugin_filter: None,
+            added_at: 1,
+            last_refreshed_at: Some(2),
+            auto_check: false,
+        };
+
+        let snapshot = source_snapshot(&source, Some("abcdef".to_string()), 3, 1, 1234);
+
+        assert_eq!(snapshot.branch.as_deref(), Some("feat/plugins"));
+        assert_eq!(snapshot.commit_sha.as_deref(), Some("abcdef"));
+        assert_eq!(snapshot.checked_at, 1234);
+        assert_eq!(snapshot.discovered_count, 3);
+        assert_eq!(snapshot.skipped_count, 1);
+    }
+
+    #[test]
+    fn validate_source_health_rejects_source_without_valid_plugins() {
+        let cache = tempdir("health-empty");
+        fs::create_dir_all(cache.join("plugins")).unwrap();
+        let plugins = tempdir("health-plugins");
+
+        let err = validate_source_health(&cache, "src-1", &plugins, None).unwrap_err();
+
+        assert_eq!(err.code, HubErrorCode::SourceHealthFailed);
+        assert!(err.message.contains("no valid plugins"));
+    }
+
+    #[test]
+    fn validate_source_health_returns_invalid_plugin_reasons() {
+        let cache = tempdir("health-invalid");
+        let invalid = cache.join("plugins").join("broken");
+        fs::create_dir_all(&invalid).unwrap();
+        fs::write(
+            invalid.join("plugin.json"),
+            r##"{"schemaVersion":99,"id":"broken","name":"Broken","version":"1.0.0","entry":"plugin.js","icon":"icon.svg","brandColor":"#000000","lines":[]}"##,
+        )
+        .unwrap();
+        let plugins = tempdir("health-invalid-plugins");
+
+        let err = validate_source_health(&cache, "src-1", &plugins, None).unwrap_err();
+
+        assert_eq!(err.code, HubErrorCode::SourceHealthFailed);
+        let skipped = err
+            .context
+            .as_ref()
+            .and_then(|context| context.get("skipped"))
+            .and_then(|value| value.as_array())
+            .expect("skipped context");
+        assert_eq!(skipped.len(), 1);
+    }
+
+    #[test]
+    fn cache_index_reuses_plugin_summary_when_commit_matches() {
+        let cache = tempdir("cache-index-reuse");
+        write_fake_plugin(&cache, "claude", "1.0.0");
+        let plugins = tempdir("cache-index-reuse-plugins");
+        let installed = InstalledLookup::new();
+
+        let (first, _) = discover_cache_plugins_with_index(
+            &cache,
+            "src-1",
+            &plugins,
+            &installed,
+            None,
+            Some("abc123".to_string()),
+        );
+        assert_eq!(first[0].available_version, "1.0.0");
+
+        write_fake_plugin(&cache, "claude", "2.0.0");
+        let (second, _) = discover_cache_plugins_with_index(
+            &cache,
+            "src-1",
+            &plugins,
+            &installed,
+            None,
+            Some("abc123".to_string()),
+        );
+
+        assert_eq!(second[0].available_version, "1.0.0");
+        assert!(cache.join("hub-cache-index.json").exists());
+    }
+
+    #[test]
+    fn cache_index_refreshes_plugin_summary_when_commit_changes() {
+        let cache = tempdir("cache-index-refresh");
+        write_fake_plugin(&cache, "claude", "1.0.0");
+        let plugins = tempdir("cache-index-refresh-plugins");
+        let installed = InstalledLookup::new();
+
+        let (first, _) = discover_cache_plugins_with_index(
+            &cache,
+            "src-1",
+            &plugins,
+            &installed,
+            None,
+            Some("abc123".to_string()),
+        );
+        assert_eq!(first[0].available_version, "1.0.0");
+
+        write_fake_plugin(&cache, "claude", "2.0.0");
+        let (second, _) = discover_cache_plugins_with_index(
+            &cache,
+            "src-1",
+            &plugins,
+            &installed,
+            None,
+            Some("def456".to_string()),
+        );
+
+        assert_eq!(second[0].available_version, "2.0.0");
     }
 
     #[test]

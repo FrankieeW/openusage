@@ -57,6 +57,7 @@ interface HubState {
   removeSource: (id: string) => Promise<void>
   refreshSource: (id: string) => Promise<HubBrowseView | null>
   install: (sourceId: string, pluginId: string) => Promise<void>
+  switchSource: (sourceId: string, pluginId: string) => Promise<void>
   uninstall: (pluginId: string, sourceId?: string) => Promise<void>
   clearError: () => void
   setHighlightedSource: (id: string | null) => void
@@ -177,6 +178,9 @@ export const useHubStore = create<HubState>((set, get) => ({
       const view = await hubCommands.refreshSource(id)
       set((s) => ({
         browseBySource: { ...s.browseBySource, [id]: view },
+        sources: s.sources.map((source) =>
+          source.id === id ? view.source : source,
+        ),
       }))
       return view
     } catch (err) {
@@ -200,6 +204,32 @@ export const useHubStore = create<HubState>((set, get) => ({
     try {
       await hubCommands.install(sourceId, pluginId)
       // The Rust side fires `plugins-changed`; we re-browse to refresh metadata
+      const view = await hubCommands.browseSource(sourceId)
+      set((s) => ({
+        browseBySource: { ...s.browseBySource, [sourceId]: view },
+      }))
+    } catch (err) {
+      set({ error: captureError(err) })
+    } finally {
+      set((s) => ({
+        loading: {
+          ...s.loading,
+          perPlugin: { ...s.loading.perPlugin, [key]: null },
+        },
+      }))
+    }
+  },
+
+  switchSource: async (sourceId, pluginId) => {
+    const key = `${sourceId}:${pluginId}`
+    set((s) => ({
+      loading: {
+        ...s.loading,
+        perPlugin: { ...s.loading.perPlugin, [key]: "install" },
+      },
+    }))
+    try {
+      await hubCommands.switchSource(sourceId, pluginId)
       const view = await hubCommands.browseSource(sourceId)
       set((s) => ({
         browseBySource: { ...s.browseBySource, [sourceId]: view },

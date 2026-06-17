@@ -1,15 +1,11 @@
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useHubStore } from "@/lib/hub/cache"
-import { labelForSourceKind } from "@/lib/hub/labels"
-import type { Source } from "@/lib/hub/types"
 import {
-  ChevronDown,
-  ChevronUp,
-  Pencil,
-  RefreshCw,
-  Trash2,
-} from "lucide-react"
+  labelForSourceKind,
+  labelForSourceTrust,
+} from "@/lib/hub/labels"
+import type { Source } from "@/lib/hub/types"
 import { useState } from "react"
 import { EditSourceDialog } from "./edit-source-dialog"
 import { PluginBrowser } from "./plugin-card"
@@ -66,10 +62,12 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
           className="flex w-full items-center gap-2 text-left"
           data-testid="hub-source-toggle"
         >
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           <span className="truncate text-sm font-medium">{source.label}</span>
           <Badge variant="secondary" className="text-[10px]">
             {labelForSourceKind(source.kind)}
+          </Badge>
+          <Badge variant="outline" className="text-[10px]">
+            {labelForSourceTrust(source)}
           </Badge>
           {view && (
             <span className="text-xs text-muted-foreground">
@@ -86,8 +84,7 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
             aria-label="Refresh source"
             data-testid="hub-source-refresh"
           >
-            <RefreshCw size={12} />
-            <span className="ml-1">Refresh</span>
+            Refresh
           </Button>
           <Button
             size="xs"
@@ -96,8 +93,7 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
             aria-label="Edit source"
             data-testid="hub-source-edit"
           >
-            <Pencil size={12} />
-            <span className="ml-1">Edit</span>
+            Edit
           </Button>
           <Button
             size="xs"
@@ -106,14 +102,28 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
             aria-label="Delete source"
             data-testid="hub-source-delete"
           >
-            <Trash2 size={12} />
-            <span className="ml-1">Delete</span>
+            Delete
           </Button>
         </div>
+        {expanded && view && (
+          <div
+            data-testid="hub-source-snapshot"
+            className="flex flex-wrap gap-2 text-xs text-muted-foreground"
+          >
+            <span>Branch {view.snapshot.branch ?? "Default"}</span>
+            {view.snapshot.commitSha && (
+              <span>Commit {view.snapshot.commitSha.slice(0, 12)}</span>
+            )}
+            <span>{view.snapshot.discoveredCount} Discovered</span>
+            <span>{view.snapshot.skippedCount} Skipped</span>
+            <span>Refreshed {formatSnapshotTime(view.snapshot.checkedAt)}</span>
+          </div>
+        )}
       </header>
 
       {expanded && view && <PluginBrowser
         sourceId={source.id}
+        source={view.source}
         available={view.available}
         skipped={view.skipped}
       />}
@@ -157,4 +167,9 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
       )}
     </section>
   )
+}
+
+function formatSnapshotTime(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "Unknown"
+  return new Date(value).toLocaleString()
 }

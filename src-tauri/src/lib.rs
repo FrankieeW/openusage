@@ -755,6 +755,7 @@ pub fn run() {
             hub::hub_remove_source,
             hub::hub_browse_source,
             hub::hub_install,
+            hub::hub_switch_source,
             hub::hub_uninstall,
             hub::hub_refresh_source,
             hub::hub_reload_plugins,

@@ -72,6 +72,8 @@ impl std::fmt::Display for InstallError {
 impl std::error::Error for InstallError {}
 
 pub const METADATA_FILENAME: &str = ".openusage-install.json";
+pub const HUB_TRASH_DIRNAME: &str = ".openusage-trash";
+const HUB_INSTALL_TMP_PREFIX: &str = ".openusage-installing";
 
 pub fn package_hash(plugin_dir: &Path) -> Result<String, InstallError> {
     let mut files = Vec::new();
@@ -95,6 +97,10 @@ pub fn package_hash(plugin_dir: &Path) -> Result<String, InstallError> {
         .map(|byte| format!("{:02x}", byte))
         .collect::<String>();
     Ok(format!("sha256:{}", hex))
+}
+
+pub fn is_internal_dir_name(name: &str) -> bool {
+    name == HUB_TRASH_DIRNAME || name.starts_with(HUB_INSTALL_TMP_PREFIX)
 }
 
 fn collect_package_files(
@@ -167,7 +173,9 @@ pub fn validate_entry_within_dir(plugin_dir: &Path, entry: &str) -> Result<(), I
             return Err(InstallError::EntryOutsidePluginDir);
         }
     }
-    let _ = plugin_dir;
+    if !plugin_dir.join(entry_path).is_file() {
+        return Err(InstallError::EntryOutsidePluginDir);
+    }
     Ok(())
 }
 
@@ -184,11 +192,45 @@ pub fn write_install_metadata(
 ) -> Result<(), InstallError> {
     let dir = install_dir.join(dir_name);
     std::fs::create_dir_all(&dir).map_err(|e| InstallError::Io(e.to_string()))?;
-    let path = dir.join(METADATA_FILENAME);
+    write_install_metadata_file(&dir, metadata)
+}
+
+fn write_install_metadata_file(
+    plugin_dir: &Path,
+    metadata: &InstallMetadata,
+) -> Result<(), InstallError> {
+    std::fs::create_dir_all(plugin_dir).map_err(|e| InstallError::Io(e.to_string()))?;
+    let path = plugin_dir.join(METADATA_FILENAME);
     let text = serde_json::to_string_pretty(metadata)
         .map_err(|e| InstallError::ManifestParse(e.to_string()))?;
     std::fs::write(&path, text).map_err(|e| InstallError::Io(e.to_string()))?;
     Ok(())
+}
+
+pub fn switch_plugin_install_dir_with_metadata(
+    source_plugin_dir: &Path,
+    install_dir: &Path,
+    old_dir_name: &str,
+    new_dir_name: &str,
+    metadata: &InstallMetadata,
+) -> Result<(), InstallError> {
+    std::fs::create_dir_all(install_dir).map_err(|e| InstallError::Io(e.to_string()))?;
+
+    let temp = unique_install_temp_dir(install_dir, new_dir_name);
+    copy_dir_recursive(source_plugin_dir, &temp).map_err(|e| {
+        cleanup_dir_best_effort(&temp);
+        InstallError::Io(e.to_string())
+    })?;
+    if let Err(error) = validate_copied_plugin(&temp, new_dir_name) {
+        cleanup_dir_best_effort(&temp);
+        return Err(error);
+    }
+    if let Err(error) = write_install_metadata_file(&temp, metadata) {
+        cleanup_dir_best_effort(&temp);
+        return Err(error);
+    }
+
+    finish_switch_plugin_install_dir(temp, install_dir, old_dir_name, new_dir_name)
 }
 
 pub fn copy_plugin_to_install_dir(
@@ -196,20 +238,178 @@ pub fn copy_plugin_to_install_dir(
     install_dir: &Path,
     plugin_id: &str,
 ) -> Result<(), InstallError> {
-    let dest = install_dir.join(plugin_id);
-    if dest.exists() {
-        std::fs::remove_dir_all(&dest).map_err(|e| InstallError::Io(e.to_string()))?;
+    switch_plugin_install_dir(source_plugin_dir, install_dir, plugin_id, plugin_id)
+}
+
+pub fn switch_plugin_install_dir(
+    source_plugin_dir: &Path,
+    install_dir: &Path,
+    old_dir_name: &str,
+    new_dir_name: &str,
+) -> Result<(), InstallError> {
+    std::fs::create_dir_all(install_dir).map_err(|e| InstallError::Io(e.to_string()))?;
+
+    let temp = unique_install_temp_dir(install_dir, new_dir_name);
+    copy_dir_recursive(source_plugin_dir, &temp).map_err(|e| {
+        cleanup_dir_best_effort(&temp);
+        InstallError::Io(e.to_string())
+    })?;
+    if let Err(error) = validate_copied_plugin(&temp, new_dir_name) {
+        cleanup_dir_best_effort(&temp);
+        return Err(error);
     }
-    copy_dir_recursive(source_plugin_dir, &dest).map_err(|e| InstallError::Io(e.to_string()))?;
+
+    finish_switch_plugin_install_dir(temp, install_dir, old_dir_name, new_dir_name)
+}
+
+fn finish_switch_plugin_install_dir(
+    temp: std::path::PathBuf,
+    install_dir: &Path,
+    old_dir_name: &str,
+    new_dir_name: &str,
+) -> Result<(), InstallError> {
+    let mut moved_dirs: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+    let old_path = install_dir.join(old_dir_name);
+    if old_path.exists() {
+        let backup = unique_trash_dir(install_dir, old_dir_name);
+        move_dir_for_replace(&old_path, &backup)?;
+        moved_dirs.push((old_path, backup));
+    }
+
+    let dest = install_dir.join(new_dir_name);
+    if new_dir_name != old_dir_name && dest.exists() {
+        let backup = unique_trash_dir(install_dir, new_dir_name);
+        move_dir_for_replace(&dest, &backup)?;
+        moved_dirs.push((dest.clone(), backup));
+    }
+
+    if let Err(error) = std::fs::rename(&temp, &dest) {
+        for (original, backup) in moved_dirs.iter().rev() {
+            let _ = std::fs::rename(backup, original);
+        }
+        cleanup_dir_best_effort(&temp);
+        return Err(InstallError::Io(error.to_string()));
+    }
+
     Ok(())
 }
 
 pub fn remove_installed_plugin(install_dir: &Path, plugin_id: &str) -> Result<(), InstallError> {
     let path = install_dir.join(plugin_id);
     if path.exists() {
-        std::fs::remove_dir_all(&path).map_err(|e| InstallError::Io(e.to_string()))?;
+        let backup = unique_trash_dir(install_dir, plugin_id);
+        if let Some(parent) = backup.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| InstallError::Io(e.to_string()))?;
+        }
+        std::fs::rename(&path, &backup).map_err(|e| InstallError::Io(e.to_string()))?;
     }
     Ok(())
+}
+
+pub fn hub_trash_dir(install_dir: &Path) -> std::path::PathBuf {
+    install_dir.join(HUB_TRASH_DIRNAME)
+}
+
+fn validate_copied_plugin(plugin_dir: &Path, install_dir_name: &str) -> Result<(), InstallError> {
+    let manifest_path = plugin_dir.join("plugin.json");
+    let text = std::fs::read_to_string(&manifest_path).map_err(|e| {
+        InstallError::ManifestParse(format!("read {}: {}", manifest_path.display(), e))
+    })?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| InstallError::ManifestParse(e.to_string()))?;
+    let schema_version = value
+        .get("schemaVersion")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    if schema_version != 1 {
+        return Err(InstallError::ManifestParse(format!(
+            "unsupported schemaVersion: {}",
+            schema_version
+        )));
+    }
+    let manifest_id = value.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    validate_id_match(
+        plugin_id_from_install_dir_name(install_dir_name),
+        manifest_id,
+    )?;
+    let entry_filename = value
+        .get("entry")
+        .and_then(|v| v.as_str())
+        .unwrap_or("plugin.js");
+    validate_entry_within_dir(plugin_dir, entry_filename)?;
+    let _ = package_hash(plugin_dir)?;
+    Ok(())
+}
+
+fn unique_install_temp_dir(install_dir: &Path, plugin_id: &str) -> std::path::PathBuf {
+    unique_child_path(
+        install_dir,
+        &format!(
+            "{}-{}",
+            HUB_INSTALL_TMP_PREFIX,
+            sanitize_backup_component(plugin_id)
+        ),
+    )
+}
+
+fn unique_trash_dir(install_dir: &Path, plugin_id: &str) -> std::path::PathBuf {
+    unique_child_path(
+        &hub_trash_dir(install_dir),
+        &sanitize_backup_component(plugin_id),
+    )
+}
+
+fn move_dir_for_replace(from: &Path, to: &Path) -> Result<(), InstallError> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| InstallError::Io(e.to_string()))?;
+    }
+    std::fs::rename(from, to).map_err(|e| InstallError::Io(e.to_string()))
+}
+
+fn unique_child_path(parent: &Path, prefix: &str) -> std::path::PathBuf {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    parent.join(format!(
+        "{}-{}-{}-{}",
+        prefix,
+        std::process::id(),
+        nanos,
+        counter
+    ))
+}
+
+fn sanitize_backup_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn cleanup_dir_best_effort(path: &Path) {
+    if path.exists() {
+        let Some(parent) = path.parent() else {
+            return;
+        };
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("install-temp");
+        let backup = unique_child_path(&hub_trash_dir(parent), &sanitize_backup_component(name));
+        if let Some(trash_parent) = backup.parent() {
+            let _ = std::fs::create_dir_all(trash_parent);
+        }
+        let _ = std::fs::rename(path, backup);
+    }
 }
 
 pub fn check_conflict(
@@ -228,6 +428,9 @@ pub fn check_conflict(
                 continue;
             }
             let dir_name = entry.file_name().to_string_lossy().to_string();
+            if is_internal_dir_name(&dir_name) {
+                continue;
+            }
             match read_install_metadata(install_dir, &dir_name) {
                 Some(m) if m.plugin_id == candidate_plugin_id => {
                     if m.source_id == candidate_source_id {
@@ -313,6 +516,9 @@ pub fn startup_sweep(
             for entry in entries.flatten() {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy().to_string();
+                if is_internal_dir_name(&name_str) {
+                    continue;
+                }
                 if !valid_ids.contains(name_str.as_str()) {
                     let path = entry.path();
                     if path.is_dir() && std::fs::remove_dir_all(&path).is_ok() {
@@ -330,6 +536,9 @@ pub fn startup_sweep(
                 let path = entry.path();
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy().to_string();
+                if is_internal_dir_name(&name_str) {
+                    continue;
+                }
                 if !path.is_dir() {
                     continue;
                 }
@@ -529,6 +738,26 @@ mod tests {
         plugin_dir
     }
 
+    fn trash_entries_for(install_dir: &Path, plugin_id: &str) -> Vec<PathBuf> {
+        let trash = hub_trash_dir(install_dir);
+        if !trash.is_dir() {
+            return Vec::new();
+        }
+        let mut entries = fs::read_dir(trash)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with(plugin_id))
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        entries.sort();
+        entries
+    }
+
     #[test]
     fn validate_id_match_accepts_matching() {
         assert!(validate_id_match("claude", "claude").is_ok());
@@ -544,7 +773,18 @@ mod tests {
 
     #[test]
     fn validate_entry_accepts_simple_relative() {
-        assert!(validate_entry_within_dir(Path::new("/tmp/x"), "plugin.js").is_ok());
+        let dir = tempdir("entry-exists");
+        fs::write(dir.join("plugin.js"), "// entry").unwrap();
+        assert!(validate_entry_within_dir(&dir, "plugin.js").is_ok());
+    }
+
+    #[test]
+    fn validate_entry_rejects_missing_file() {
+        let dir = tempdir("entry-missing");
+        assert_eq!(
+            validate_entry_within_dir(&dir, "plugin.js"),
+            Err(InstallError::EntryOutsidePluginDir),
+        );
     }
 
     #[test]
@@ -669,12 +909,119 @@ mod tests {
     }
 
     #[test]
-    fn remove_installed_plugin_deletes_dir() {
+    fn copy_keeps_existing_install_when_candidate_is_invalid() {
+        let src = tempdir("invalid-src");
+        let dst = tempdir("invalid-dst");
+        let existing = write_plugin(&dst, "claude", "0.6.27");
+        fs::write(existing.join("plugin.js"), "// existing").unwrap();
+
+        let candidate = write_plugin(&src, "claude", "0.6.28");
+        fs::write(
+            candidate.join("plugin.json"),
+            r##"{
+  "schemaVersion": 1,
+  "id": "wrong-id",
+  "name": "Claude",
+  "version": "0.6.28",
+  "entry": "plugin.js",
+  "icon": "icon.svg",
+  "brandColor": "#000000",
+  "lines": []
+}"##,
+        )
+        .unwrap();
+
+        assert!(copy_plugin_to_install_dir(&candidate, &dst, "claude").is_err());
+
+        assert_eq!(
+            fs::read_to_string(dst.join("claude").join("plugin.js")).unwrap(),
+            "// existing"
+        );
+        assert!(trash_entries_for(&dst, "claude").is_empty());
+    }
+
+    #[test]
+    fn copy_replaces_existing_install_after_moving_old_dir_to_trash() {
+        let src = tempdir("replace-src");
+        let dst = tempdir("replace-dst");
+        let existing = write_plugin(&dst, "claude", "0.6.27");
+        fs::write(existing.join("plugin.js"), "// old").unwrap();
+        let candidate = write_plugin(&src, "claude", "0.6.28");
+        fs::write(candidate.join("plugin.js"), "// new").unwrap();
+
+        copy_plugin_to_install_dir(&candidate, &dst, "claude").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dst.join("claude").join("plugin.js")).unwrap(),
+            "// new"
+        );
+        let trashed = trash_entries_for(&dst, "claude");
+        assert_eq!(trashed.len(), 1);
+        assert_eq!(
+            fs::read_to_string(trashed[0].join("plugin.js")).unwrap(),
+            "// old"
+        );
+    }
+
+    #[test]
+    fn remove_installed_plugin_moves_dir_to_trash() {
         let dst = tempdir("remove");
         write_plugin(&dst, "claude", "0.6.27");
         assert!(dst.join("claude").exists());
         remove_installed_plugin(&dst, "claude").unwrap();
         assert!(!dst.join("claude").exists());
+        let trashed = trash_entries_for(&dst, "claude");
+        assert_eq!(trashed.len(), 1);
+        assert!(trashed[0].join("plugin.json").exists());
+    }
+
+    #[test]
+    fn switch_plugin_install_dir_moves_old_source_to_trash_and_installs_new_source_dir() {
+        let src = tempdir("switch-src");
+        let dst = tempdir("switch-dst");
+        let old = write_plugin(&dst, "claude__old", "0.6.27");
+        fs::write(old.join("plugin.js"), "// old").unwrap();
+        let candidate = write_plugin(&src, "claude", "0.6.28");
+        fs::write(candidate.join("plugin.js"), "// new").unwrap();
+
+        switch_plugin_install_dir(&candidate, &dst, "claude__old", "claude__new").unwrap();
+
+        assert!(!dst.join("claude__old").exists());
+        assert_eq!(
+            fs::read_to_string(dst.join("claude__new").join("plugin.js")).unwrap(),
+            "// new"
+        );
+        let trashed = trash_entries_for(&dst, "claude__old");
+        assert_eq!(trashed.len(), 1);
+        assert_eq!(
+            fs::read_to_string(trashed[0].join("plugin.js")).unwrap(),
+            "// old"
+        );
+    }
+
+    #[test]
+    fn switch_plugin_install_dir_with_metadata_installs_metadata_atomically() {
+        let src = tempdir("switch-meta-src");
+        let dst = tempdir("switch-meta-dst");
+        let candidate = write_plugin(&src, "claude", "0.6.28");
+        let metadata = InstallMetadata {
+            schema_version: INSTALL_METADATA_SCHEMA_VERSION,
+            source_id: "src-new".into(),
+            source_url: "https://github.com/foo/bar".into(),
+            source_label: "Foo".into(),
+            source_kind: Some(crate::hub::source::SourceKind::Github),
+            source_ref: Some("main".into()),
+            source_commit_sha: Some("abc123".into()),
+            plugin_id: "claude".into(),
+            installed_version: "0.6.28".into(),
+            package_hash: "sha256:new".into(),
+            installed_at: 123,
+        };
+
+        switch_plugin_install_dir_with_metadata(&candidate, &dst, "claude", "claude", &metadata)
+            .unwrap();
+
+        assert_eq!(read_install_metadata(&dst, "claude").unwrap(), metadata);
     }
 
     #[test]

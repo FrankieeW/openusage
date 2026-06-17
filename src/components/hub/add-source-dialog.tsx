@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button"
 import { useHubStore } from "@/lib/hub/cache"
 import { parseGithubTreeUrl } from "@/lib/hub/parse-source-url"
 import { openUrl } from "@tauri-apps/plugin-opener"
-import { ExternalLink } from "lucide-react"
 import { useState } from "react"
 
 const RECOMMENDED_SOURCES_URL =
@@ -165,8 +164,7 @@ export function AddSourceDialog({ onClose }: AddSourceDialogProps) {
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           onClick={() => openUrl(RECOMMENDED_SOURCES_URL).catch(console.error)}
         >
-          <ExternalLink size={12} />
-          Browse recommended sources
+          Browse Recommended Sources
         </button>
       </div>
     </div>
