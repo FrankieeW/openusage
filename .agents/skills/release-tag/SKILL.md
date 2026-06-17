@@ -83,16 +83,46 @@ git push origin {branch}
 git push origin v{new_version}
 ```
 
-### 7. Create GitHub Release
+### 7. Verify and Publish GitHub Release
 
-Do **not** create the release before the push — CI (e.g. tauri-action) may create its own release when it sees the tag. After the push, check whether the release already exists:
+Do **not** create the release before the push — CI (e.g. tauri-action) may create its own release when it sees the tag.
+
+Watch the release workflow and verify the final release state:
 
 ```bash
-gh release view v{new_version} -R {owner}/{repo} 2>/dev/null
+gh run watch
+gh release view v{new_version} --json isDraft,isPrerelease,assets \
+  --jq '{isDraft, isPrerelease, assets:[.assets[].name]}'
 ```
 
-- If it **does not** exist: `gh release create v{new_version} --title "v{new_version}" --notes "{changelog}"`
-- If it **already exists** (CI created it): `gh release edit v{new_version} --notes "{changelog}"` to add the release notes, then delete any leftover draft duplicates.
+Require `isDraft=false`, `isPrerelease=false`, and updater assets including `latest.json` and a `.sig`. If the release is still a draft but has complete assets, publish it:
+
+```bash
+gh release edit v{new_version} --draft=false
+```
+
+Publish the approved changelog onto the release. The CI-created release body may be generic, so always set the notes explicitly:
+
+```bash
+gh release edit v{new_version} --notes-file <changelog-file>
+```
+
+If the workflow failed before CI created the release, re-run the failed workflow and wait. Do **not** create the release by hand with `gh release create`; a manual release can ship without the signed `.dmg`, `.sig`, and `latest.json` updater assets.
+
+Before deleting any duplicate draft, compare its notes and assets against the published release and migrate anything missing. Only delete duplicate drafts once a separate published release for the tag exists:
+
+```bash
+tag="v{new_version}"
+if [ "$(gh release view "$tag" --json isDraft --jq '.isDraft')" = "false" ]; then
+  gh api repos/{owner}/{repo}/releases --paginate \
+    --jq '.[] | select(.draft and .tag_name=="'"$tag"'") | .id' \
+    | xargs -I{} gh api -X DELETE repos/{owner}/{repo}/releases/{}
+else
+  echo "No published release for $tag yet - publish it first; do NOT delete the draft."
+fi
+```
+
+Definition of done: exactly one published, non-draft release for the tag, with updater assets and release notes present.
 
 ## Changelog Template
 
