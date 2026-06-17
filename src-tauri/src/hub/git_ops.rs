@@ -52,13 +52,12 @@ pub async fn is_git_available() -> bool {
 
 pub async fn clone(url: &str, dest: &Path, branch: Option<&str>) -> Result<(), GitError> {
     let mut cmd = Command::new("git");
-    cmd.arg("clone")
-        .arg("--depth=1")
-        .arg("--single-branch");
+    cmd.arg("clone").arg("--depth=1").arg("--single-branch");
     if let Some(b) = branch {
         cmd.arg("--branch").arg(b);
     }
-    let fut = cmd.arg(url)
+    let fut = cmd
+        .arg(url)
         .arg(dest)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -91,12 +90,38 @@ pub async fn fetch_and_reset(repo_dir: &Path, branch: Option<&str>) -> Result<()
     run_with_timeout(reset_fut, REFRESH_TIMEOUT_SECS).await
 }
 
+pub async fn head_commit(repo_dir: &Path) -> Result<String, GitError> {
+    let fut = Command::new("git")
+        .arg("-C")
+        .arg(repo_dir)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+    let output = run_capture_with_timeout(fut, REFRESH_TIMEOUT_SECS).await?;
+    Ok(String::from_utf8_lossy(&output).trim().to_string())
+}
+
 async fn run_with_timeout(
     fut: impl std::future::Future<Output = std::io::Result<std::process::Output>>,
     secs: u64,
 ) -> Result<(), GitError> {
     match timeout(Duration::from_secs(secs), fut).await {
         Ok(Ok(o)) if o.status.success() => Ok(()),
+        Ok(Ok(o)) => Err(GitError::CommandFailed(format_stderr(&o.stderr))),
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => Err(GitError::NotInstalled),
+        Ok(Err(e)) => Err(GitError::Io(e.to_string())),
+        Err(_) => Err(GitError::Timeout),
+    }
+}
+
+async fn run_capture_with_timeout(
+    fut: impl std::future::Future<Output = std::io::Result<std::process::Output>>,
+    secs: u64,
+) -> Result<Vec<u8>, GitError> {
+    match timeout(Duration::from_secs(secs), fut).await {
+        Ok(Ok(o)) if o.status.success() => Ok(o.stdout),
         Ok(Ok(o)) => Err(GitError::CommandFailed(format_stderr(&o.stderr))),
         Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => Err(GitError::NotInstalled),
         Ok(Err(e)) => Err(GitError::Io(e.to_string())),

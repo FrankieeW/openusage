@@ -1,7 +1,3 @@
-// RED phase: tests written, implementation deliberately stubbed.
-// `canonicalize` returns `Err(InvalidUrl)` for every input so tests fail for the
-// "missing logic" reason, not for a typo or build error.
-
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -20,11 +16,15 @@ pub struct CanonicalSource {
     pub kind: SourceKind,
     pub url: String,
     pub local_path: Option<std::path::PathBuf>,
+    pub branch: Option<String>,
 }
 
 impl PartialEq for CanonicalSource {
     fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind && self.url == other.url && self.local_path == other.local_path
+        self.kind == other.kind
+            && self.url == other.url
+            && self.local_path == other.local_path
+            && self.branch == other.branch
     }
 }
 
@@ -36,6 +36,7 @@ impl std::fmt::Debug for CanonicalSource {
             .field("kind", &self.kind)
             .field("url", &self.url)
             .field("local_path", &self.local_path)
+            .field("branch", &self.branch)
             .finish()
     }
 }
@@ -51,8 +52,11 @@ pub fn canonicalize(input: &str) -> Result<CanonicalSource, HubError> {
     }
 
     if let Some(rest) = trimmed.strip_prefix("git@github.com:") {
-        let normalized = normalize_github_owner_repo(rest)?;
-        return Ok(github(&format!("https://github.com/{}", normalized)));
+        let (normalized, branch) = normalize_github_path(rest)?;
+        return Ok(github_with_branch(
+            &format!("https://github.com/{}", normalized),
+            branch,
+        ));
     }
 
     let as_path = Path::new(trimmed);
@@ -65,8 +69,11 @@ pub fn canonicalize(input: &str) -> Result<CanonicalSource, HubError> {
             "https" | "http" => {
                 let (host, path) = split_host_path(rest);
                 if host == "github.com" {
-                    let normalized = normalize_github_owner_repo(path)?;
-                    Ok(github(&format!("https://github.com/{}", normalized)))
+                    let (normalized, branch) = normalize_github_path(path)?;
+                    Ok(github_with_branch(
+                        &format!("https://github.com/{}", normalized),
+                        branch,
+                    ))
                 } else {
                     Ok(generic_git(trimmed))
                 }
@@ -96,6 +103,7 @@ fn local_path(path: std::path::PathBuf) -> Result<CanonicalSource, HubError> {
             kind: SourceKind::LocalPath,
             url: path.display().to_string(),
             local_path: Some(path),
+            branch: None,
         })
     } else {
         Err(HubError::InvalidUrl)
@@ -109,16 +117,27 @@ fn split_host_path(s: &str) -> (&str, &str) {
     }
 }
 
-fn normalize_github_owner_repo(path: &str) -> Result<String, HubError> {
+fn normalize_github_path(path: &str) -> Result<(String, Option<String>), HubError> {
     let trimmed = path.trim_end_matches(".git").trim_matches('/');
     let segments: Vec<&str> = trimmed.split('/').filter(|s| !s.is_empty()).collect();
     if segments.len() != 2 {
+        if segments.len() >= 4 && segments[2] == "tree" {
+            let owner_repo = &segments[..2];
+            if !owner_repo.iter().all(|s| is_simple_segment(s)) {
+                return Err(HubError::InvalidUrl);
+            }
+            let branch = segments[3..].join("/");
+            if !is_valid_branch_path(&branch) {
+                return Err(HubError::InvalidUrl);
+            }
+            return Ok((owner_repo.join("/"), Some(branch)));
+        }
         return Err(HubError::InvalidUrl);
     }
     if !segments.iter().all(|s| is_simple_segment(s)) {
         return Err(HubError::InvalidUrl);
     }
-    Ok(segments.join("/"))
+    Ok((segments.join("/"), None))
 }
 
 fn is_simple_segment(s: &str) -> bool {
@@ -127,11 +146,24 @@ fn is_simple_segment(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+fn is_valid_branch_path(s: &str) -> bool {
+    !s.is_empty()
+        && !s.contains("..")
+        && !s.contains('\\')
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'))
+}
+
 fn github(url: &str) -> CanonicalSource {
+    github_with_branch(url, None)
+}
+
+fn github_with_branch(url: &str, branch: Option<String>) -> CanonicalSource {
     CanonicalSource {
         kind: SourceKind::Github,
         url: url.to_string(),
         local_path: None,
+        branch,
     }
 }
 
@@ -140,6 +172,7 @@ fn generic_git(url: &str) -> CanonicalSource {
         kind: SourceKind::GenericGit,
         url: url.to_string(),
         local_path: None,
+        branch: None,
     }
 }
 
@@ -152,6 +185,7 @@ mod tests {
             kind: SourceKind::Github,
             url: url.to_string(),
             local_path: None,
+            branch: None,
         }
     }
 
@@ -160,6 +194,7 @@ mod tests {
             kind: SourceKind::GenericGit,
             url: url.to_string(),
             local_path: None,
+            branch: None,
         }
     }
 
@@ -168,6 +203,16 @@ mod tests {
             kind: SourceKind::LocalPath,
             url: path.display().to_string(),
             local_path: Some(path.to_path_buf()),
+            branch: None,
+        }
+    }
+
+    fn github_branch(url: &str, branch: &str) -> CanonicalSource {
+        CanonicalSource {
+            kind: SourceKind::Github,
+            url: url.to_string(),
+            local_path: None,
+            branch: Some(branch.to_string()),
         }
     }
 
@@ -184,6 +229,14 @@ mod tests {
         assert_eq!(
             canonicalize("https://github.com/foo/bar").unwrap(),
             github("https://github.com/foo/bar"),
+        );
+    }
+
+    #[test]
+    fn github_tree_url_preserves_branch_as_source_ref() {
+        assert_eq!(
+            canonicalize("https://github.com/foo/bar/tree/feat/openrouter-provider").unwrap(),
+            github_branch("https://github.com/foo/bar", "feat/openrouter-provider"),
         );
     }
 

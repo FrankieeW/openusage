@@ -52,7 +52,11 @@ impl HubError {
         }
     }
 
-    pub fn with_context(code: HubErrorCode, message: impl Into<String>, ctx: serde_json::Value) -> Self {
+    pub fn with_context(
+        code: HubErrorCode,
+        message: impl Into<String>,
+        ctx: serde_json::Value,
+    ) -> Self {
         Self {
             code,
             message: message.into(),
@@ -64,7 +68,10 @@ impl HubError {
         Self::new(HubErrorCode::InvalidUrl, "invalid source URL")
     }
     pub fn git_not_installed() -> Self {
-        Self::new(HubErrorCode::GitNotInstalled, "git binary not found on PATH")
+        Self::new(
+            HubErrorCode::GitNotInstalled,
+            "git binary not found on PATH",
+        )
     }
     pub fn clone_failed(msg: impl Into<String>) -> Self {
         Self::new(HubErrorCode::CloneFailed, msg)
@@ -97,9 +104,13 @@ impl From<install::InstallError> for HubError {
             install::InstallError::ConflictUnmanaged => Self::conflict_unmanaged(),
             install::InstallError::ManifestParse(m) => Self::manifest_parse(m),
             install::InstallError::Io(m) => Self::io(m),
-            install::InstallError::IdMismatch { dir_name, manifest_id } => {
-                Self::manifest_parse(format!("id mismatch: dir={} manifest={}", dir_name, manifest_id))
-            }
+            install::InstallError::IdMismatch {
+                dir_name,
+                manifest_id,
+            } => Self::manifest_parse(format!(
+                "id mismatch: dir={} manifest={}",
+                dir_name, manifest_id
+            )),
             install::InstallError::EntryOutsidePluginDir => {
                 Self::manifest_parse("entry path escapes plugin dir")
             }
@@ -129,7 +140,23 @@ pub struct PluginInfo {
     pub unmanaged: bool,
     pub installed_version: Option<String>,
     pub available_version: String,
+    pub package_hash: String,
+    pub package_status: PackageStatus,
     pub update_available: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PackageStatus {
+    NotInstalled,
+    Installed,
+    UpdateAvailable,
+    SourceChanged,
+    InstalledNewerThanSource,
+    SamePackageFromOtherSource,
+    DifferentPackageSamePluginId,
+    UnmanagedInstalled,
+    OrphanedSource,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,6 +180,7 @@ pub struct UpdateInfo {
     pub plugin_id: String,
     pub from: String,
     pub to: String,
+    pub package_hash: String,
 }
 
 /// What the JS Hub install side knows about an already-installed plugin.
@@ -161,6 +189,7 @@ pub struct InstalledLookupEntry {
     pub source_id: String,
     pub source_url: String,
     pub version: String,
+    pub package_hash: String,
 }
 
 pub type InstalledLookup<'a> = std::collections::HashMap<String, InstalledLookupEntry>;
@@ -232,7 +261,10 @@ pub fn discover_cache_plugins(
             }
         };
 
-        let schema_version = value.get("schemaVersion").and_then(|v| v.as_u64()).unwrap_or(0);
+        let schema_version = value
+            .get("schemaVersion")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         if schema_version != 1 {
             skipped.push(SkippedPlugin {
                 path: manifest_path.display().to_string(),
@@ -281,26 +313,43 @@ pub fn discover_cache_plugins(
             .and_then(|v| v.as_str())
             .unwrap_or("icon.svg");
         let icon_data_url = read_icon_data_url(&plugin_dir, icon_filename);
+        let package_hash = match install::package_hash(&plugin_dir) {
+            Ok(hash) => hash,
+            Err(err) => {
+                skipped.push(SkippedPlugin {
+                    path: plugin_dir.display().to_string(),
+                    reason: format!("hash: {}", err),
+                });
+                continue;
+            }
+        };
 
-        let (installed_flag, installed_source_id, installed_version, unmanaged) =
+        let (installed_flag, installed_source_id, installed_version, unmanaged, package_status) =
             match installed.get(&id) {
-                // Installed from THIS source — show as installed with version info.
-                Some(info) if info.source_id == source_id => {
-                    (true, Some(info.source_id.clone()), Some(info.version.clone()), false)
-                }
-                // Installed from a DIFFERENT source — multi-source model: don't show as
-                // installed here, and don't show as unmanaged (it's managed elsewhere).
-                Some(_) => (false, None, None, false),
+                Some(info) if info.source_id == source_id => (
+                    true,
+                    Some(info.source_id.clone()),
+                    Some(info.version.clone()),
+                    false,
+                    classify_same_source_package(info, &version, &package_hash),
+                ),
+                Some(info) => (
+                    false,
+                    Some(info.source_id.clone()),
+                    Some(info.version.clone()),
+                    false,
+                    classify_other_source_package(info, &package_hash),
+                ),
                 None => {
                     if plugins_dir.join(&id).is_dir() {
-                        (true, None, None, true)
+                        (true, None, None, true, PackageStatus::UnmanagedInstalled)
                     } else {
-                        (false, None, None, false)
+                        (false, None, None, false, PackageStatus::NotInstalled)
                     }
                 }
             };
 
-        let update_available = installed_flag && installed_version.as_deref() != Some(version.as_str());
+        let update_available = package_status == PackageStatus::UpdateAvailable;
 
         available.push(PluginInfo {
             id,
@@ -313,6 +362,8 @@ pub fn discover_cache_plugins(
             unmanaged,
             installed_version,
             available_version: version,
+            package_hash,
+            package_status,
             update_available,
         });
     }
@@ -329,6 +380,69 @@ fn read_icon_data_url(plugin_dir: &Path, icon_filename: &str) -> Option<String> 
     Some(format!("data:image/svg+xml;base64,{}", encoded))
 }
 
+fn classify_same_source_package(
+    installed: &InstalledLookupEntry,
+    available_version: &str,
+    available_hash: &str,
+) -> PackageStatus {
+    match compare_versions(&installed.version, available_version) {
+        Some(std::cmp::Ordering::Less) => PackageStatus::UpdateAvailable,
+        Some(std::cmp::Ordering::Greater) => PackageStatus::InstalledNewerThanSource,
+        Some(std::cmp::Ordering::Equal) => {
+            if installed.package_hash.is_empty() || installed.package_hash == available_hash {
+                PackageStatus::Installed
+            } else {
+                PackageStatus::SourceChanged
+            }
+        }
+        None => {
+            if installed.package_hash.is_empty() || installed.package_hash == available_hash {
+                PackageStatus::Installed
+            } else {
+                PackageStatus::SourceChanged
+            }
+        }
+    }
+}
+
+fn classify_other_source_package(
+    installed: &InstalledLookupEntry,
+    available_hash: &str,
+) -> PackageStatus {
+    if !installed.package_hash.is_empty() && installed.package_hash == available_hash {
+        PackageStatus::SamePackageFromOtherSource
+    } else {
+        PackageStatus::DifferentPackageSamePluginId
+    }
+}
+
+fn compare_versions(installed: &str, available: &str) -> Option<std::cmp::Ordering> {
+    if installed == available {
+        return Some(std::cmp::Ordering::Equal);
+    }
+    let installed_parts = parse_numeric_version(installed)?;
+    let available_parts = parse_numeric_version(available)?;
+    Some(installed_parts.cmp(&available_parts))
+}
+
+fn parse_numeric_version(version: &str) -> Option<Vec<u64>> {
+    let core = version
+        .split_once('-')
+        .map(|(core, _)| core)
+        .unwrap_or(version);
+    let mut parts = Vec::new();
+    for part in core.split('.') {
+        if part.is_empty() {
+            return None;
+        }
+        parts.push(part.parse::<u64>().ok()?);
+    }
+    while parts.len() < 3 {
+        parts.push(0);
+    }
+    Some(parts)
+}
+
 /// Build a Hub lookup map from the on-disk install directory.
 pub fn build_installed_lookup(plugins_dir: &Path) -> InstalledLookup<'_> {
     let mut map = InstalledLookup::new();
@@ -343,12 +457,28 @@ pub fn build_installed_lookup(plugins_dir: &Path) -> InstalledLookup<'_> {
         }
         let dir_name = entry.file_name().to_string_lossy().to_string();
         if let Some(meta) = install::read_install_metadata(plugins_dir, &dir_name) {
+            let package_hash = if meta.package_hash.is_empty() {
+                match install::package_hash(&path) {
+                    Ok(hash) => hash,
+                    Err(err) => {
+                        log::warn!(
+                            "build_installed_lookup: cannot hash {}: {}",
+                            path.display(),
+                            err
+                        );
+                        String::new()
+                    }
+                }
+            } else {
+                meta.package_hash
+            };
             map.insert(
                 meta.plugin_id.clone(),
                 InstalledLookupEntry {
                     source_id: meta.source_id,
                     source_url: meta.source_url,
                     version: meta.installed_version,
+                    package_hash,
                 },
             );
         }
@@ -373,10 +503,7 @@ pub fn now_millis() -> i64 {
 
 /// Look up a source's plugin_filter from the registry by id.
 /// Returns `None` for unknown sources (treated as "no filter").
-pub fn plugin_filter_lookup<'a>(
-    source_id: &str,
-    sources: &'a [Source],
-) -> Option<&'a [String]> {
+pub fn plugin_filter_lookup<'a>(source_id: &str, sources: &'a [Source]) -> Option<&'a [String]> {
     sources
         .iter()
         .find(|s| s.id == source_id)
@@ -396,11 +523,7 @@ pub fn normalize_plugin_filter(filter: Option<Vec<String>>) -> Option<Vec<String
             out.push(trimmed.to_string());
         }
     }
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    if out.is_empty() { None } else { Some(out) }
 }
 
 pub fn derive_label_from_url(url: &str) -> String {
@@ -438,13 +561,20 @@ pub fn sanitize_label(label: &str) -> String {
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
-fn lock_state<'a>(state: &'a State<'_, Mutex<crate::AppState>>) -> Result<std::sync::MutexGuard<'a, crate::AppState>, HubError> {
-    state.lock().map_err(|e| HubError::io(format!("state poisoned: {}", e)))
+fn lock_state<'a>(
+    state: &'a State<'_, Mutex<crate::AppState>>,
+) -> Result<std::sync::MutexGuard<'a, crate::AppState>, HubError> {
+    state
+        .lock()
+        .map_err(|e| HubError::io(format!("state poisoned: {}", e)))
 }
 
 /// Reload the installed plugins list and emit `plugins-changed` so the JS side
 /// can refresh. Errors are logged; not propagated (best-effort).
-fn reload_plugins_and_emit(app: &AppHandle, state: &State<'_, Mutex<crate::AppState>>) -> Result<(), HubError> {
+fn reload_plugins_and_emit(
+    app: &AppHandle,
+    state: &State<'_, Mutex<crate::AppState>>,
+) -> Result<(), HubError> {
     let plugins_dir = {
         let s = lock_state(state)?;
         s.plugins_dir.clone()
@@ -468,7 +598,11 @@ fn reload_plugins_and_emit(app: &AppHandle, state: &State<'_, Mutex<crate::AppSt
 /// and report orphan-source plugins back to JS via `hub-orphans-detected`.
 fn report_orphans(app: &AppHandle, state: &State<'_, Mutex<crate::AppState>>) {
     let (hub_dir, plugins_dir, registry) = match lock_state(state) {
-        Ok(s) => (s.hub_dir.clone(), s.plugins_dir.clone(), s.hub_registry.clone()),
+        Ok(s) => (
+            s.hub_dir.clone(),
+            s.plugins_dir.clone(),
+            s.hub_registry.clone(),
+        ),
         Err(_) => return,
     };
     let report = install::startup_sweep(&hub_dir, &plugins_dir, &registry);
@@ -503,6 +637,7 @@ pub async fn hub_add_source(
     let canonical = source::canonicalize(&url).map_err(|_| HubError::invalid_url())?;
     let kind = canonical.kind;
     let url = canonical.url.clone();
+    let branch = branch.or_else(|| canonical.branch.clone());
 
     let id = format!("src-{}", uuid::Uuid::new_v4().simple());
     let label = label.unwrap_or_else(|| derive_label_from_url(&canonical.url));
@@ -706,6 +841,8 @@ pub async fn hub_install(
     } else {
         format!("{}__{}", plugin_id, safe_label)
     };
+    let install_dir_name =
+        find_install_dir(&plugins_dir, &plugin_id, &source_id).unwrap_or(install_dir_name);
 
     install::check_conflict(&plugins_dir, &install_dir_name, &source_id)?;
 
@@ -727,14 +864,35 @@ pub async fn hub_install(
         .and_then(|v| v.as_str())
         .unwrap_or("0.0.0")
         .to_string();
+    let package_hash = install::package_hash(&source_plugin_dir)?;
+    let source_commit_sha = if matches!(source.kind, SourceKind::Github | SourceKind::GenericGit) {
+        match git_ops::head_commit(&cache_dir_for(&hub_dir, &source_id)).await {
+            Ok(sha) => Some(sha),
+            Err(err) => {
+                log::warn!(
+                    "hub_install: cannot read source commit for {}: {}",
+                    source_id,
+                    err
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     install::copy_plugin_to_install_dir(&source_plugin_dir, &plugins_dir, &install_dir_name)?;
     let metadata = install::InstallMetadata {
+        schema_version: install::INSTALL_METADATA_SCHEMA_VERSION,
         source_id: source.id.clone(),
         source_url: source.url.clone(),
         source_label: source.label.clone(),
+        source_kind: Some(source.kind),
+        source_ref: source.branch.clone(),
+        source_commit_sha,
         plugin_id: plugin_id.clone(),
         installed_version: version,
+        package_hash,
         installed_at: now_millis(),
     };
     install::write_install_metadata(&plugins_dir, &install_dir_name, &metadata)?;
@@ -753,14 +911,16 @@ pub async fn hub_uninstall(
 ) -> Result<(), HubError> {
     log::info!(
         "hub_uninstall ENTER: plugin_id={} source_id={:?}",
-        plugin_id, source_id
+        plugin_id,
+        source_id
     );
     {
         let s = lock_state(&state)?;
         let plugins_dir = s.plugins_dir.clone();
         let dir_name = {
             // Try metadata-based lookup first (handles per-source dir naming)
-            let found = find_install_dir(&plugins_dir, &plugin_id, source_id.as_deref().unwrap_or(""));
+            let found =
+                find_install_dir(&plugins_dir, &plugin_id, source_id.as_deref().unwrap_or(""));
             if let Some(d) = found {
                 log::info!("hub_uninstall: found dir {} for {}", d, plugin_id);
                 d
@@ -788,7 +948,11 @@ fn find_install_dir(plugins_dir: &Path, plugin_id: &str, source_id: &str) -> Opt
     let entries = match std::fs::read_dir(plugins_dir) {
         Ok(e) => e,
         Err(e) => {
-            log::warn!("find_install_dir: cannot read {}: {}", plugins_dir.display(), e);
+            log::warn!(
+                "find_install_dir: cannot read {}: {}",
+                plugins_dir.display(),
+                e
+            );
             return None;
         }
     };
@@ -802,7 +966,9 @@ fn find_install_dir(plugins_dir: &Path, plugin_id: &str, source_id: &str) -> Opt
             Some(meta) => {
                 log::debug!(
                     "find_install_dir: dir={} meta.plugin_id={} meta.source_id={}",
-                    dir_name, meta.plugin_id, meta.source_id
+                    dir_name,
+                    meta.plugin_id,
+                    meta.source_id
                 );
                 let source_matches = source_id.is_empty() || meta.source_id == source_id;
                 if meta.plugin_id == plugin_id && source_matches {
@@ -816,7 +982,8 @@ fn find_install_dir(plugins_dir: &Path, plugin_id: &str, source_id: &str) -> Opt
     }
     log::warn!(
         "find_install_dir: no match for plugin_id={} source_id={}",
-        plugin_id, source_id
+        plugin_id,
+        source_id
     );
     None
 }
@@ -901,7 +1068,11 @@ pub async fn hub_check_updates(
     };
     let (hub_dir, plugins_dir, sources) = {
         let s = lock_state(&state)?;
-        (s.hub_dir.clone(), s.plugins_dir.clone(), s.hub_registry.sources.clone())
+        (
+            s.hub_dir.clone(),
+            s.plugins_dir.clone(),
+            s.hub_registry.sources.clone(),
+        )
     };
 
     let mut updates = Vec::new();
@@ -925,12 +1096,14 @@ pub async fn hub_check_updates(
             plugin_filter_lookup(id, &sources),
         );
         for plugin in available {
-            if let (true, Some(from)) = (plugin.update_available, plugin.installed_version.clone()) {
+            if let (true, Some(from)) = (plugin.update_available, plugin.installed_version.clone())
+            {
                 updates.push(UpdateInfo {
                     source_id: id.clone(),
                     plugin_id: plugin.id.clone(),
                     from,
                     to: plugin.available_version,
+                    package_hash: plugin.package_hash,
                 });
             }
         }
@@ -1009,6 +1182,8 @@ pub async fn hub_list_local_plugins(
             unmanaged: true,
             installed_version: Some(version.clone()),
             available_version: version,
+            package_hash: install::package_hash(&path)?,
+            package_status: PackageStatus::UnmanagedInstalled,
             update_available: false,
         });
     }
@@ -1056,8 +1231,7 @@ mod tests {
             ),
         )
         .unwrap();
-        fs::write(dir.join("plugin.js"), "globalThis.__openusage_plugin={};")
-            .unwrap();
+        fs::write(dir.join("plugin.js"), "globalThis.__openusage_plugin={};").unwrap();
         fs::write(dir.join("icon.svg"), "<svg/>").unwrap();
     }
 
@@ -1066,8 +1240,7 @@ mod tests {
         let cache = tempdir("cache-empty");
         let plugins = tempdir("plugins-empty");
         let lookup = InstalledLookup::new();
-        let (available, skipped) =
-            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
+        let (available, skipped) = discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
         assert!(available.is_empty());
         assert!(skipped.is_empty());
     }
@@ -1079,13 +1252,16 @@ mod tests {
         write_fake_plugin(&cache, "codex", "0.6.27");
         let plugins = tempdir("plugins-1");
         let lookup = InstalledLookup::new();
-        let (available, skipped) =
-            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
+        let (available, skipped) = discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
         assert_eq!(available.len(), 2);
         assert_eq!(available[0].id, "claude");
         assert_eq!(available[1].id, "codex");
         assert!(available.iter().all(|p| p.icon_data_url.is_some()));
-        assert!(available.iter().all(|p| p.brand_color.as_deref() == Some("#FF00FF")));
+        assert!(
+            available
+                .iter()
+                .all(|p| p.brand_color.as_deref() == Some("#FF00FF"))
+        );
         assert!(skipped.is_empty());
     }
 
@@ -1095,6 +1271,8 @@ mod tests {
         write_fake_plugin(&cache, "claude", "0.7.0");
         let plugins = tempdir("plugins-upd");
         write_fake_plugin(&plugins, "claude", "0.6.27"); // older version installed
+        let installed_hash =
+            install::package_hash(&plugins.join("plugins").join("claude")).unwrap();
         let mut lookup = InstalledLookup::new();
         lookup.insert(
             "claude".into(),
@@ -1102,6 +1280,7 @@ mod tests {
                 source_id: "src-1".into(),
                 source_url: "https://github.com/foo/bar".into(),
                 version: "0.6.27".into(),
+                package_hash: installed_hash,
             },
         );
         let (available, _skipped) =
@@ -1112,7 +1291,124 @@ mod tests {
         assert_eq!(claude.installed_version.as_deref(), Some("0.6.27"));
         assert_eq!(claude.available_version, "0.7.0");
         assert!(claude.update_available);
+        assert_eq!(claude.package_status, PackageStatus::UpdateAvailable);
         assert!(!claude.unmanaged);
+    }
+
+    #[test]
+    fn discover_marks_same_version_different_hash_from_same_source_as_source_changed() {
+        let cache = tempdir("cache-source-changed");
+        write_fake_plugin(&cache, "claude", "0.6.27");
+        let plugins = tempdir("plugins-source-changed");
+        let candidate_hash = install::package_hash(&cache.join("plugins").join("claude")).unwrap();
+        let mut lookup = InstalledLookup::new();
+        lookup.insert(
+            "claude".into(),
+            InstalledLookupEntry {
+                source_id: "src-1".into(),
+                source_url: "https://github.com/foo/bar".into(),
+                version: "0.6.27".into(),
+                package_hash: "sha256:previous".into(),
+            },
+        );
+
+        let (available, _skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
+        let claude = available.iter().find(|p| p.id == "claude").unwrap();
+
+        assert!(claude.installed);
+        assert!(!claude.update_available);
+        assert_eq!(claude.package_hash, candidate_hash);
+        assert_eq!(claude.package_status, PackageStatus::SourceChanged);
+    }
+
+    #[test]
+    fn discover_marks_installed_newer_than_source_without_update() {
+        let cache = tempdir("cache-newer-installed");
+        write_fake_plugin(&cache, "claude", "1.0.0");
+        let plugins = tempdir("plugins-newer-installed");
+        let mut lookup = InstalledLookup::new();
+        lookup.insert(
+            "claude".into(),
+            InstalledLookupEntry {
+                source_id: "src-1".into(),
+                source_url: "https://github.com/foo/bar".into(),
+                version: "2.0.0".into(),
+                package_hash: "sha256:installed".into(),
+            },
+        );
+
+        let (available, _skipped) =
+            discover_cache_plugins(&cache, "src-1", &plugins, &lookup, None);
+        let claude = available.iter().find(|p| p.id == "claude").unwrap();
+
+        assert!(claude.installed);
+        assert!(!claude.update_available);
+        assert_eq!(
+            claude.package_status,
+            PackageStatus::InstalledNewerThanSource
+        );
+    }
+
+    #[test]
+    fn discover_marks_same_package_from_other_source() {
+        let cache = tempdir("cache-same-package-other-source");
+        write_fake_plugin(&cache, "claude", "0.6.27");
+        let plugins = tempdir("plugins-same-package-other-source");
+        let candidate_hash = install::package_hash(&cache.join("plugins").join("claude")).unwrap();
+        let mut lookup = InstalledLookup::new();
+        lookup.insert(
+            "claude".to_string(),
+            InstalledLookupEntry {
+                source_id: "src-1".to_string(),
+                source_url: "https://github.com/example/a".to_string(),
+                version: "0.6.27".to_string(),
+                package_hash: candidate_hash,
+            },
+        );
+
+        let (available, _skipped) =
+            discover_cache_plugins(&cache, "src-2", &plugins, &lookup, None);
+        let claude = available.iter().find(|p| p.id == "claude").unwrap();
+
+        assert!(!claude.installed);
+        assert_eq!(claude.installed_source_id.as_deref(), Some("src-1"));
+        assert_eq!(claude.installed_version.as_deref(), Some("0.6.27"));
+        assert_eq!(
+            claude.package_status,
+            PackageStatus::SamePackageFromOtherSource
+        );
+        assert!(!claude.update_available);
+    }
+
+    #[test]
+    fn discover_marks_different_package_same_plugin_id_from_other_source() {
+        let cache = tempdir("cache-different-package-other-source");
+        write_fake_plugin(&cache, "claude", "0.6.27");
+        let plugins = tempdir("plugins-different-package-other-source");
+        let mut lookup = InstalledLookup::new();
+        lookup.insert(
+            "claude".to_string(),
+            InstalledLookupEntry {
+                source_id: "src-1".to_string(),
+                source_url: "https://github.com/example/a".to_string(),
+                version: "0.6.27".to_string(),
+                package_hash: "sha256:other".to_string(),
+            },
+        );
+
+        let (available, _skipped) =
+            discover_cache_plugins(&cache, "src-2", &plugins, &lookup, None);
+        let claude = available.iter().find(|p| p.id == "claude").unwrap();
+
+        assert!(!claude.installed);
+        assert_eq!(claude.installed_source_id.as_deref(), Some("src-1"));
+        assert_eq!(claude.installed_version.as_deref(), Some("0.6.27"));
+        assert_eq!(
+            claude.package_status,
+            PackageStatus::DifferentPackageSamePluginId
+        );
+        assert!(!claude.update_available);
     }
 
     #[test]
@@ -1138,16 +1434,27 @@ mod tests {
                 source_id: "src-1".to_string(),
                 source_url: "https://github.com/example/a".to_string(),
                 version: "0.6.27".to_string(),
+                package_hash: "sha256:installed".to_string(),
             },
         );
         // Browse the OTHER source (src-2). Same id, different source.
         let (available, _skipped) =
             discover_cache_plugins(&cache, "src-2", &plugins, &lookup, None);
         let claude = available.iter().find(|p| p.id == "claude").unwrap();
-        assert!(!claude.installed, "must not show as installed from a different source");
-        assert!(!claude.unmanaged, "must not show as unmanaged (it's managed by src-1)");
-        assert!(claude.installed_source_id.is_none());
-        assert!(claude.installed_version.is_none());
+        assert!(
+            !claude.installed,
+            "must not show as installed from a different source"
+        );
+        assert!(
+            !claude.unmanaged,
+            "must not show as unmanaged (it's managed by src-1)"
+        );
+        assert_eq!(claude.installed_source_id.as_deref(), Some("src-1"));
+        assert_eq!(claude.installed_version.as_deref(), Some("0.6.27"));
+        assert_eq!(
+            claude.package_status,
+            PackageStatus::DifferentPackageSamePluginId
+        );
         assert!(!claude.update_available);
     }
 

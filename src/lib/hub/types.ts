@@ -1,7 +1,7 @@
 // Mirror of the Rust Hub types in src-tauri/src/hub/mod.rs.
 // Field names are kept in camelCase to match Tauri's IPC convention — the Rust
 // side serializes snake_case via #[serde(rename_all = "camelCase")] where it
-// matters; enum variants are PascalCase strings.
+// matters.
 
 // Mirrors `DEFAULT_HUB_ID` in src-tauri/src/hub/registry.rs — the id of the
 // built-in official source ("Frankie's"). Used to distinguish it from
@@ -9,6 +9,17 @@
 export const DEFAULT_HUB_ID = "default"
 
 export type SourceKind = "Github" | "GenericGit" | "LocalPath"
+
+export type PackageStatus =
+  | "notInstalled"
+  | "installed"
+  | "updateAvailable"
+  | "sourceChanged"
+  | "installedNewerThanSource"
+  | "samePackageFromOtherSource"
+  | "differentPackageSamePluginId"
+  | "unmanagedInstalled"
+  | "orphanedSource"
 
 export interface Source {
   id: string
@@ -37,6 +48,8 @@ export interface PluginInfo {
   unmanaged: boolean
   installedVersion: string | null
   availableVersion: string
+  packageHash: string
+  packageStatus: PackageStatus
   updateAvailable: boolean
 }
 
@@ -56,6 +69,7 @@ export interface UpdateInfo {
   pluginId: string
   from: string
   to: string
+  packageHash: string
 }
 
 export type HubErrorCode =

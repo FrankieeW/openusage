@@ -38,6 +38,8 @@ function sampleBrowse(sourceId: string, pluginId: string): HubBrowseView {
         unmanaged: false,
         installedVersion: null,
         availableVersion: "0.6.27",
+        packageHash: "sha256:fixture",
+        packageStatus: "notInstalled",
         updateAvailable: false,
       },
     ],

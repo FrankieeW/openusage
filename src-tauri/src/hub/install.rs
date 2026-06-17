@@ -1,27 +1,49 @@
-// RED phase: install validation + metadata write stubs.
-// `validate_id_match`, `validate_entry_within_dir`, `read_install_metadata`,
-// `write_install_metadata`, `copy_plugin_to_install_dir`, and the public
-// `hub_install` are all stubs that return errors or empty values.
-
 use std::path::Path;
-#[cfg(test)] use std::path::PathBuf;
+#[cfg(test)]
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+pub const INSTALL_METADATA_SCHEMA_VERSION: u32 = 2;
+
+fn legacy_metadata_schema_version() -> u32 {
+    1
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InstallMetadata {
+    #[serde(default = "legacy_metadata_schema_version", alias = "schema_version")]
+    pub schema_version: u32,
+    #[serde(alias = "source_id")]
     pub source_id: String,
+    #[serde(alias = "source_url")]
     pub source_url: String,
-    #[serde(default)]
+    #[serde(default, alias = "source_label")]
     pub source_label: String,
+    #[serde(default, alias = "source_kind")]
+    pub source_kind: Option<crate::hub::source::SourceKind>,
+    #[serde(default, alias = "source_ref")]
+    pub source_ref: Option<String>,
+    #[serde(default, alias = "source_commit_sha")]
+    pub source_commit_sha: Option<String>,
+    #[serde(alias = "plugin_id")]
     pub plugin_id: String,
+    #[serde(alias = "installed_version")]
     pub installed_version: String,
+    #[serde(default, alias = "package_hash")]
+    pub package_hash: String,
+    #[serde(alias = "installed_at")]
     pub installed_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallError {
-    IdMismatch { dir_name: String, manifest_id: String },
+    IdMismatch {
+        dir_name: String,
+        manifest_id: String,
+    },
     EntryOutsidePluginDir,
     ConflictWithSource(String),
     ConflictUnmanaged,
@@ -32,7 +54,10 @@ pub enum InstallError {
 impl std::fmt::Display for InstallError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InstallError::IdMismatch { dir_name, manifest_id } => {
+            InstallError::IdMismatch {
+                dir_name,
+                manifest_id,
+            } => {
                 write!(f, "id mismatch: dir={} manifest={}", dir_name, manifest_id)
             }
             InstallError::EntryOutsidePluginDir => write!(f, "entry path escapes plugin dir"),
@@ -47,6 +72,76 @@ impl std::fmt::Display for InstallError {
 impl std::error::Error for InstallError {}
 
 pub const METADATA_FILENAME: &str = ".openusage-install.json";
+
+pub fn package_hash(plugin_dir: &Path) -> Result<String, InstallError> {
+    let mut files = Vec::new();
+    collect_package_files(plugin_dir, &mut files)?;
+    files.sort_by(|a, b| {
+        package_relative_path(plugin_dir, a).cmp(&package_relative_path(plugin_dir, b))
+    });
+
+    let mut hasher = Sha256::new();
+    for path in files {
+        let rel = package_relative_path(plugin_dir, &path);
+        hasher.update(rel.as_bytes());
+        hasher.update([0]);
+        let bytes = std::fs::read(&path).map_err(|e| InstallError::Io(e.to_string()))?;
+        hasher.update(bytes);
+        hasher.update([0]);
+    }
+    let digest = hasher.finalize();
+    let hex = digest
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect::<String>();
+    Ok(format!("sha256:{}", hex))
+}
+
+fn collect_package_files(
+    dir: &Path,
+    files: &mut Vec<std::path::PathBuf>,
+) -> Result<(), InstallError> {
+    let entries = std::fs::read_dir(dir).map_err(|e| InstallError::Io(e.to_string()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| InstallError::Io(e.to_string()))?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|e| InstallError::Io(e.to_string()))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            if name_str == ".git" {
+                continue;
+            }
+            collect_package_files(&path, files)?;
+        } else if file_type.is_file() && !should_skip_package_file(&name_str) {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn package_relative_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn should_skip_package_file(name: &str) -> bool {
+    name == METADATA_FILENAME
+        || name == ".DS_Store"
+        || name == "test-helpers.js"
+        || name.ends_with(".test.js")
+        || name.ends_with(".test.ts")
+        || name.ends_with(".test.tsx")
+}
 
 pub fn validate_id_match(dir_name: &str, manifest_id: &str) -> Result<(), InstallError> {
     if dir_name == manifest_id {
@@ -105,8 +200,7 @@ pub fn copy_plugin_to_install_dir(
     if dest.exists() {
         std::fs::remove_dir_all(&dest).map_err(|e| InstallError::Io(e.to_string()))?;
     }
-    copy_dir_recursive(source_plugin_dir, &dest)
-        .map_err(|e| InstallError::Io(e.to_string()))?;
+    copy_dir_recursive(source_plugin_dir, &dest).map_err(|e| InstallError::Io(e.to_string()))?;
     Ok(())
 }
 
@@ -123,15 +217,48 @@ pub fn check_conflict(
     plugin_id: &str,
     candidate_source_id: &str,
 ) -> Result<(), InstallError> {
-    let plugin_dir = install_dir.join(plugin_id);
-    if !plugin_dir.exists() {
-        return Ok(());
+    let candidate_plugin_id = plugin_id_from_install_dir_name(plugin_id);
+    if install_dir.is_dir() {
+        let entries =
+            std::fs::read_dir(install_dir).map_err(|e| InstallError::Io(e.to_string()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| InstallError::Io(e.to_string()))?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let dir_name = entry.file_name().to_string_lossy().to_string();
+            match read_install_metadata(install_dir, &dir_name) {
+                Some(m) if m.plugin_id == candidate_plugin_id => {
+                    if m.source_id == candidate_source_id {
+                        return Ok(());
+                    }
+                    if m.source_id.is_empty() {
+                        return Err(InstallError::ConflictUnmanaged);
+                    }
+                    return Err(InstallError::ConflictWithSource(m.source_id));
+                }
+                Some(_) => {}
+                None if dir_name == plugin_id || dir_name == candidate_plugin_id => {
+                    return Err(InstallError::ConflictUnmanaged);
+                }
+                None => {}
+            }
+        }
+    } else if install_dir.exists() {
+        return Err(InstallError::Io(format!(
+            "{} is not a directory",
+            install_dir.display()
+        )));
     }
-    match read_install_metadata(install_dir, plugin_id) {
-        Some(m) if m.source_id == candidate_source_id => Ok(()),
-        Some(m) => Err(InstallError::ConflictWithSource(m.source_id)),
-        None => Err(InstallError::ConflictUnmanaged),
-    }
+    Ok(())
+}
+
+fn plugin_id_from_install_dir_name(dir_name: &str) -> &str {
+    dir_name
+        .split_once("__")
+        .map(|(id, _)| id)
+        .unwrap_or(dir_name)
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -149,11 +276,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         if ft.is_dir() {
             copy_dir_recursive(&entry_path, &dest_path)?;
         } else if ft.is_file() {
-            if name_str.ends_with(".test.js")
-                || name_str.ends_with(".test.ts")
-                || name_str.ends_with(".test.tsx")
-                || name_str == "test-helpers.js"
-            {
+            if should_skip_package_file(&name_str) {
                 continue;
             }
             std::fs::copy(&entry_path, &dest_path)?;
@@ -182,11 +305,7 @@ pub fn startup_sweep(
 ) -> OrphanReport {
     use std::collections::HashSet;
     let mut report = OrphanReport::default();
-    let valid_ids: HashSet<&str> = registry
-        .sources
-        .iter()
-        .map(|s| s.id.as_str())
-        .collect();
+    let valid_ids: HashSet<&str> = registry.sources.iter().map(|s| s.id.as_str()).collect();
 
     let cache_dir = hub_dir.join("cache");
     if cache_dir.is_dir() {
@@ -234,7 +353,7 @@ pub fn startup_sweep(
 #[cfg(test)]
 mod sweep_tests {
     use super::*;
-    use crate::hub::registry::{RegistryFile, Source, CURRENT_VERSION};
+    use crate::hub::registry::{CURRENT_VERSION, RegistryFile, Source};
     use crate::hub::source::SourceKind;
     use std::fs;
 
@@ -272,11 +391,16 @@ mod sweep_tests {
 
     fn write_metadata(install_dir: &Path, plugin_id: &str, source_id: &str) {
         let m = InstallMetadata {
+            schema_version: INSTALL_METADATA_SCHEMA_VERSION,
             source_id: source_id.into(),
             source_url: "https://github.com/foo/bar".into(),
             source_label: "".into(),
+            source_kind: Some(SourceKind::Github),
+            source_ref: Some("main".into()),
+            source_commit_sha: Some("abc123".into()),
             plugin_id: plugin_id.into(),
             installed_version: "0.6.27".into(),
+            package_hash: "sha256:fixture".into(),
             installed_at: 0,
         };
         write_install_metadata(install_dir, plugin_id, &m).unwrap();
@@ -294,7 +418,10 @@ mod sweep_tests {
             sources: vec![source("valid-source")],
         };
         let report = startup_sweep(&hub, &plugins, &registry);
-        assert_eq!(report.removed_cache_dirs, vec!["removed-source".to_string()]);
+        assert_eq!(
+            report.removed_cache_dirs,
+            vec!["removed-source".to_string()]
+        );
         assert!(cache.join("valid-source").exists());
         assert!(!cache.join("removed-source").exists());
     }
@@ -324,10 +451,7 @@ mod sweep_tests {
             sources: vec![source("other-source")],
         };
         let report = startup_sweep(&hub, &plugins, &registry);
-        assert_eq!(
-            report.orphan_source_plugins,
-            vec!["orphan".to_string()]
-        );
+        assert_eq!(report.orphan_source_plugins, vec!["orphan".to_string()]);
         assert!(plugins.join("orphan").exists());
     }
 
@@ -443,11 +567,16 @@ mod tests {
     fn metadata_round_trip() {
         let dir = tempdir("meta");
         let m = InstallMetadata {
+            schema_version: INSTALL_METADATA_SCHEMA_VERSION,
             source_id: "src-1".into(),
             source_url: "https://github.com/foo/bar".into(),
             source_label: "".into(),
+            source_kind: Some(crate::hub::source::SourceKind::Github),
+            source_ref: Some("main".into()),
+            source_commit_sha: Some("abc123".into()),
             plugin_id: "claude".into(),
             installed_version: "0.6.27".into(),
+            package_hash: "sha256:fixture".into(),
             installed_at: 1234567890,
         };
         write_install_metadata(&dir, "claude", &m).unwrap();
@@ -455,6 +584,74 @@ mod tests {
         assert_eq!(loaded, m);
         // Sidecar file is hidden-named and inside plugin dir
         assert!(dir.join("claude").join(METADATA_FILENAME).exists());
+    }
+
+    #[test]
+    fn legacy_metadata_defaults_missing_v2_fields() {
+        let dir = tempdir("legacy-meta");
+        fs::create_dir_all(dir.join("claude")).unwrap();
+        fs::write(
+            dir.join("claude").join(METADATA_FILENAME),
+            r##"{
+  "source_id": "src-1",
+  "source_url": "https://github.com/foo/bar",
+  "source_label": "Foo",
+  "plugin_id": "claude",
+  "installed_version": "0.6.27",
+  "installed_at": 123
+}"##,
+        )
+        .unwrap();
+
+        let loaded = read_install_metadata(&dir, "claude").unwrap();
+
+        assert_eq!(loaded.schema_version, 1);
+        assert_eq!(loaded.package_hash, "");
+        assert_eq!(loaded.source_kind, None);
+        assert_eq!(loaded.source_ref, None);
+        assert_eq!(loaded.source_commit_sha, None);
+    }
+
+    #[test]
+    fn package_hash_is_stable_and_ignores_install_metadata() {
+        let root = tempdir("hash-stable");
+        let plugin_dir = write_plugin(&root, "claude", "0.6.27");
+
+        let before = package_hash(&plugin_dir).unwrap();
+        fs::write(plugin_dir.join(METADATA_FILENAME), "{}").unwrap();
+        let after = package_hash(&plugin_dir).unwrap();
+
+        assert_eq!(before, after);
+        assert!(before.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn package_hash_changes_when_plugin_file_changes() {
+        let root = tempdir("hash-change");
+        let plugin_dir = write_plugin(&root, "claude", "0.6.27");
+
+        let before = package_hash(&plugin_dir).unwrap();
+        fs::write(plugin_dir.join("plugin.js"), "// changed").unwrap();
+        let after = package_hash(&plugin_dir).unwrap();
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn package_hash_ignores_files_excluded_from_install_copy() {
+        let root = tempdir("hash-copy-excludes");
+        let plugin_dir = write_plugin(&root, "claude", "0.6.27");
+
+        let before = package_hash(&plugin_dir).unwrap();
+        fs::write(plugin_dir.join("plugin.test.ts"), "throw new Error('test')").unwrap();
+        fs::write(
+            plugin_dir.join("test-helpers.js"),
+            "export const helper = true",
+        )
+        .unwrap();
+        let after = package_hash(&plugin_dir).unwrap();
+
+        assert_eq!(before, after);
     }
 
     #[test]
@@ -502,11 +699,16 @@ mod tests {
         let dst = tempdir("conflict-match");
         write_plugin(&dst, "claude", "0.6.27");
         let m = InstallMetadata {
+            schema_version: INSTALL_METADATA_SCHEMA_VERSION,
             source_id: "src-existing".into(),
             source_url: "https://github.com/foo/bar".into(),
             source_label: "".into(),
+            source_kind: Some(crate::hub::source::SourceKind::Github),
+            source_ref: Some("main".into()),
+            source_commit_sha: Some("abc123".into()),
             plugin_id: "claude".into(),
             installed_version: "0.6.27".into(),
+            package_hash: "sha256:fixture".into(),
             installed_at: 0,
         };
         write_install_metadata(&dst, "claude", &m).unwrap();
@@ -518,16 +720,46 @@ mod tests {
         let dst = tempdir("conflict-diff");
         write_plugin(&dst, "claude", "0.6.27");
         let m = InstallMetadata {
+            schema_version: INSTALL_METADATA_SCHEMA_VERSION,
             source_id: "src-existing".into(),
             source_url: "https://github.com/foo/bar".into(),
             source_label: "".into(),
+            source_kind: Some(crate::hub::source::SourceKind::Github),
+            source_ref: Some("main".into()),
+            source_commit_sha: Some("abc123".into()),
             plugin_id: "claude".into(),
             installed_version: "0.6.27".into(),
+            package_hash: "sha256:fixture".into(),
             installed_at: 0,
         };
         write_install_metadata(&dst, "claude", &m).unwrap();
         assert_eq!(
             check_conflict(&dst, "claude", "src-new"),
+            Err(InstallError::ConflictWithSource("src-existing".into())),
+        );
+    }
+
+    #[test]
+    fn check_conflict_when_same_plugin_id_exists_in_source_scoped_dir() {
+        let dst = tempdir("conflict-scoped-dir");
+        write_plugin(&dst, "claude__source-a", "0.6.27");
+        let m = InstallMetadata {
+            schema_version: INSTALL_METADATA_SCHEMA_VERSION,
+            source_id: "src-existing".into(),
+            source_url: "https://github.com/foo/bar".into(),
+            source_label: "".into(),
+            source_kind: Some(crate::hub::source::SourceKind::Github),
+            source_ref: Some("main".into()),
+            source_commit_sha: Some("abc123".into()),
+            plugin_id: "claude".into(),
+            installed_version: "0.6.27".into(),
+            package_hash: "sha256:fixture".into(),
+            installed_at: 0,
+        };
+        write_install_metadata(&dst, "claude__source-a", &m).unwrap();
+
+        assert_eq!(
+            check_conflict(&dst, "claude__source-b", "src-new"),
             Err(InstallError::ConflictWithSource("src-existing".into())),
         );
     }

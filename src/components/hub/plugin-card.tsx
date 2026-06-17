@@ -4,7 +4,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { useHubStore, pluginLoadingKey } from "@/lib/hub/cache"
 import type { PluginInfo, SkippedPlugin } from "@/lib/hub/types"
-import { AlertCircle } from "lucide-react"
 
 interface PluginBrowserProps {
   sourceId: string
@@ -37,8 +36,7 @@ export function PluginBrowser({ sourceId, available, skipped }: PluginBrowserPro
 
       {skipped.length > 0 && (
         <Alert variant="destructive" className="mx-4">
-          <AlertCircle size={14} />
-          <AlertTitle>{skipped.length} plugin{skipped.length === 1 ? "" : "s"} skipped</AlertTitle>
+          <AlertTitle>Plugins Skipped</AlertTitle>
           <AlertDescription>
             <ul className="list-disc pl-4 text-xs">
               {skipped.map((s) => (
@@ -88,6 +86,14 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
   const uninstallLoading = useHubStore(
     (s) => s.loading.perPlugin[uninstallKey] === "uninstall",
   )
+  const statusLabel = packageStatusLabel(plugin)
+  const canInstall = plugin.packageStatus === "notInstalled"
+  const canUpdate =
+    plugin.installed &&
+    (plugin.packageStatus === "updateAvailable" ||
+      plugin.packageStatus === "sourceChanged")
+  const installButtonLabel =
+    plugin.packageStatus === "sourceChanged" ? "Reinstall" : "Update"
 
   return (
     <div
@@ -101,13 +107,25 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
     >
       <div className="flex items-center gap-2">
         <span className="truncate text-sm font-medium">{plugin.name}</span>
-        {plugin.updateAvailable && (
-          <span className="text-xs text-blue-600">↑ {plugin.installedVersion}</span>
+        {statusLabel && (
+          <span
+            className={cn(
+              "shrink-0 text-xs",
+              plugin.packageStatus === "updateAvailable" && "text-blue-600",
+              plugin.packageStatus === "sourceChanged" && "text-amber-600",
+              plugin.packageStatus === "installedNewerThanSource" && "text-violet-600",
+              (plugin.packageStatus === "samePackageFromOtherSource" ||
+                plugin.packageStatus === "differentPackageSamePluginId") &&
+                "text-muted-foreground",
+            )}
+          >
+            {statusLabel}
+          </span>
         )}
       </div>
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground">v{plugin.availableVersion}</span>
-        {!plugin.installed && (
+        {canInstall && (
           <Button
             size="xs"
             variant="default"
@@ -116,6 +134,17 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
             data-testid="hub-install-button"
           >
             {installLoading ? "Installing…" : "Install"}
+          </Button>
+        )}
+        {canUpdate && (
+          <Button
+            size="xs"
+            variant="default"
+            onClick={onInstall}
+            disabled={installLoading || loading}
+            data-testid="hub-install-button"
+          >
+            {installLoading ? "Installing…" : installButtonLabel}
           </Button>
         )}
         {plugin.installed && !plugin.unmanaged && (
@@ -142,4 +171,29 @@ function PluginCard({ plugin, loading, onInstall, onUninstall }: PluginCardProps
       </div>
     </div>
   )
+}
+
+function packageStatusLabel(plugin: PluginInfo) {
+  switch (plugin.packageStatus) {
+    case "installed":
+      return "Installed"
+    case "updateAvailable":
+      return plugin.installedVersion
+        ? `Update From v${plugin.installedVersion}`
+        : "Update Available"
+    case "sourceChanged":
+      return "Package Changed"
+    case "installedNewerThanSource":
+      return "Installed Newer"
+    case "samePackageFromOtherSource":
+      return "Same Package Installed"
+    case "differentPackageSamePluginId":
+      return "Different Package Installed"
+    case "unmanagedInstalled":
+      return "Local Install"
+    case "orphanedSource":
+      return "Source Removed"
+    case "notInstalled":
+      return null
+  }
 }

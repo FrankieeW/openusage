@@ -236,7 +236,15 @@ export const useHubStore = create<HubState>((set, get) => ({
             ...view,
             available: view.available.map((p) =>
               p.id === pluginId && p.sourceId === sourceId
-                ? { ...p, installed: false, installedSourceId: null, installedVersion: null, updateAvailable: false, unmanaged: false }
+                ? {
+                    ...p,
+                    installed: false,
+                    installedSourceId: null,
+                    installedVersion: null,
+                    updateAvailable: false,
+                    unmanaged: false,
+                    packageStatus: "notInstalled",
+                  }
                 : p,
             ),
           }
