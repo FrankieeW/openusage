@@ -39,7 +39,8 @@ plugins/<id>/
 Plugin Hub discovers plugins from source repositories or local folders that use
 this same `plugins/<id>/` layout. Installed plugins are copied into the app data
 directory. The app may add `.openusage-install.json` next to an installed
-plugin; publishers should not include that file in source plugins.
+plugin; publishers should not include that file in source plugins. Hub does not
+run install scripts.
 
 ## Manifest Schema (`plugin.json`)
 
@@ -49,6 +50,7 @@ plugin; publishers should not include that file in source plugins.
   "id": "my-provider",
   "name": "My Provider",
   "version": "0.0.1",
+  "updatedAt": "2026-06-17T00:00:00Z",
   "entry": "plugin.js",
   "icon": "icon.svg",
   "links": [{ "label": "Status", "url": "https://status.example.com" }],
@@ -66,6 +68,7 @@ plugin; publishers should not include that file in source plugins.
 | `id`            | string | Yes      | Unique identifier (kebab-case recommended) |
 | `name`          | string | Yes      | Display name shown in UI                   |
 | `version`       | string | Yes      | Semver version                             |
+| `updatedAt`     | string/number | No       | Publisher-declared update time shown in Hub |
 | `entry`         | string | Yes      | Relative path to JS entry file             |
 | `icon`          | string | Yes      | Relative path to SVG icon file             |
 | `links`         | array  | No       | Optional quick links shown on detail page  |
@@ -73,7 +76,12 @@ plugin; publishers should not include that file in source plugins.
 
 The `version` field is the publisher-declared plugin version. Hub also
 calculates a package hash from the files under `plugins/<id>/` so it can tell
-whether two sources provide the exact same package.
+whether two sources provide the exact same package. `.openusage-install.json`
+is local install metadata and is excluded from this hash.
+
+`updatedAt` is optional. When present, Hub shows it on the plugin card as the
+plugin's update date. Use an ISO 8601/RFC 3339 timestamp such as
+`2026-06-17T00:00:00Z`. Unix milliseconds are also accepted.
 
 Validation rules:
 
@@ -82,6 +90,10 @@ Validation rules:
 - `id` must match `globalThis.__openusage_plugin.id`
 - `icon` must be relative and point to an SVG file (use `fill="currentColor"` for theme compatibility)
 - `links[].url` (if provided) must be an `http://` or `https://` URL
+
+Two plugins with the same `id` are not automatically the same package. Hub uses
+the package hash to decide whether another source provides the same package or a
+different package with the same id.
 
 ### Links Array (Optional)
 

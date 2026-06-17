@@ -5,6 +5,8 @@ URL into **Add Source**.
 
 Last checked: 2026-06-17.
 
+For install checks and source trust labels, see [Hub Safety Model](hub-safety-model.md).
+
 ## Curated Sources
 
 | Source | URL | Notes |
@@ -14,8 +16,9 @@ Last checked: 2026-06-17.
 
 ## Community Sources
 
-These sources are public community work. Add them only if you want the listed
-providers and are comfortable trusting that source.
+These sources are public community work. Hub labels user-added GitHub sources as
+**Community**. Add them only if you want the listed providers and are
+comfortable trusting that source.
 
 | Provider | Source | Notes |
 | --- | --- | --- |
@@ -39,6 +42,9 @@ may load the repository's default branch and miss the intended plugin.
 Different sources may publish the same `pluginId` and `version`. Hub compares
 the package hash of each `plugins/<id>/` directory to tell whether they are the
 same package or different packages with the same name.
+
+Non-GitHub git URLs are labeled **Unknown Git Source** and require a preview
+confirmation before install.
 
 ## Find More Forks
 
