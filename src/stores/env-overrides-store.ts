@@ -3,8 +3,6 @@ import { invoke, isTauri } from "@tauri-apps/api/core"
 import {
   loadEnvGroups,
   saveEnvGroups,
-  loadActiveGroupIds,
-  saveActiveGroupIds,
   parseValueInput,
   type EnvGroup,
   type EnvOverride,
@@ -19,7 +17,6 @@ export type FlattenedOverride = {
 
 type EnvOverridesStore = {
   groups: EnvGroup[]
-  activeGroupIds: string[]
   loaded: boolean
 
   init: () => Promise<void>
@@ -32,8 +29,6 @@ type EnvOverridesStore = {
   updateOverride: (groupId: string, index: number, patch: Partial<EnvOverride>) => void
   removeOverride: (groupId: string, index: number) => void
 
-  setActiveGroupIds: (ids: string[]) => void
-
   flattened: () => FlattenedOverride[]
 
   saveAndReload: () => Promise<number | null>
@@ -45,11 +40,10 @@ function makeId(): string {
   return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-function flattenGroups(groups: EnvGroup[], activeIds: string[]): FlattenedOverride[] {
-  const activeSet = new Set(activeIds)
+function flattenGroups(groups: EnvGroup[]): FlattenedOverride[] {
   const byName = new Map<string, FlattenedOverride>()
   for (const group of groups) {
-    if (!activeSet.has(group.id)) continue
+    if (!group.enabled) continue
     for (const o of group.overrides) {
       const parsed = parseValueInput(o.value)
       if (parsed.kind === "literal" && parsed.value.length === 0) continue
@@ -73,12 +67,12 @@ function flattenGroups(groups: EnvGroup[], activeIds: string[]): FlattenedOverri
 // ---------------------------------------------------------------------------
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
-let pendingSnapshot: { groups: EnvGroup[]; activeGroupIds: string[] } | null = null
+let pendingSnapshot: EnvGroup[] | null = null
 
 /** Push flattened overrides to the Rust plugin engine immediately. */
-async function pushToRust(groups: EnvGroup[], activeGroupIds: string[]): Promise<void> {
+async function pushToRust(groups: EnvGroup[]): Promise<void> {
   if (!isTauri()) return
-  const flattened = flattenGroups(groups, activeGroupIds)
+  const flattened = flattenGroups(groups)
   try {
     await invoke("set_env_overrides", { overrides: flattened })
   } catch (e) {
@@ -86,10 +80,10 @@ async function pushToRust(groups: EnvGroup[], activeGroupIds: string[]): Promise
   }
 }
 
-function scheduleSync(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }): void {
-  pendingSnapshot = snapshot
+function scheduleSync(groups: EnvGroup[]): void {
+  pendingSnapshot = groups
   // Push to Rust immediately so plugins see changes right away.
-  void pushToRust(snapshot.groups, snapshot.activeGroupIds)
+  void pushToRust(groups)
 
   if (persistTimer !== null) clearTimeout(persistTimer)
   persistTimer = setTimeout(() => {
@@ -99,36 +93,26 @@ function scheduleSync(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }
     if (!toSync) return
     void (async () => {
       try {
-        await saveEnvGroups(toSync.groups)
+        await saveEnvGroups(toSync)
       } catch (e) {
         console.error("Failed to save env groups:", e)
-      }
-      try {
-        await saveActiveGroupIds(toSync.activeGroupIds)
-      } catch (e) {
-        console.error("Failed to save active group ids:", e)
       }
     })()
   }, 250)
 }
 
-function syncNow(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }): Promise<void> {
+function syncNow(groups: EnvGroup[]): Promise<void> {
   if (persistTimer !== null) {
     clearTimeout(persistTimer)
     persistTimer = null
     pendingSnapshot = null
   }
   return (async () => {
-    await pushToRust(snapshot.groups, snapshot.activeGroupIds)
+    await pushToRust(groups)
     try {
-      await saveEnvGroups(snapshot.groups)
+      await saveEnvGroups(groups)
     } catch (e) {
       console.error("Failed to save env groups:", e)
-    }
-    try {
-      await saveActiveGroupIds(snapshot.activeGroupIds)
-    } catch (e) {
-      console.error("Failed to save active group ids:", e)
     }
   })()
 }
@@ -139,18 +123,16 @@ function syncNow(snapshot: { groups: EnvGroup[]; activeGroupIds: string[] }): Pr
 
 export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
   groups: [],
-  activeGroupIds: [],
   loaded: false,
 
   init: async () => {
     if (get().loaded) return
     try {
       const groups = await loadEnvGroups()
-      const activeGroupIds = await loadActiveGroupIds(groups)
-      set({ groups, activeGroupIds, loaded: true })
+      set({ groups, loaded: true })
       // Push to Rust on first load (belt-and-suspenders with the cold-start
       // path in Rust that reads env.json directly).
-      await pushToRust(groups, activeGroupIds)
+      await pushToRust(groups)
     } catch (e) {
       console.error("Failed to load env overrides:", e)
       set({ loaded: true })
@@ -163,20 +145,19 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
       { id: makeId(), name: "New Group", enabled: true, overrides: [] },
     ]
     set({ groups: next })
-    scheduleSync({ groups: next, activeGroupIds: get().activeGroupIds })
+    scheduleSync(next)
   },
 
   updateGroup: (groupId, patch) => {
     const next = get().groups.map((g) => (g.id === groupId ? { ...g, ...patch } : g))
     set({ groups: next })
-    scheduleSync({ groups: next, activeGroupIds: get().activeGroupIds })
+    scheduleSync(next)
   },
 
   removeGroup: (groupId) => {
     const next = get().groups.filter((g) => g.id !== groupId)
-    const activeNext = get().activeGroupIds.filter((id) => id !== groupId)
-    set({ groups: next, activeGroupIds: activeNext })
-    scheduleSync({ groups: next, activeGroupIds: activeNext })
+    set({ groups: next })
+    scheduleSync(next)
   },
 
   addOverride: (groupId) => {
@@ -184,7 +165,7 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
       g.id === groupId ? { ...g, overrides: [...g.overrides, { name: "", value: "" }] } : g
     )
     set({ groups: next })
-    scheduleSync({ groups: next, activeGroupIds: get().activeGroupIds })
+    scheduleSync(next)
   },
 
   updateOverride: (groupId, index, patch) => {
@@ -196,7 +177,7 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
       }
     })
     set({ groups: next })
-    scheduleSync({ groups: next, activeGroupIds: get().activeGroupIds })
+    scheduleSync(next)
   },
 
   removeOverride: (groupId, index) => {
@@ -205,19 +186,14 @@ export const useEnvOverridesStore = create<EnvOverridesStore>((set, get) => ({
       return { ...g, overrides: g.overrides.filter((_, i) => i !== index) }
     })
     set({ groups: next })
-    scheduleSync({ groups: next, activeGroupIds: get().activeGroupIds })
+    scheduleSync(next)
   },
 
-  setActiveGroupIds: (ids) => {
-    set({ activeGroupIds: ids })
-    scheduleSync({ groups: get().groups, activeGroupIds: ids })
-  },
-
-  flattened: () => flattenGroups(get().groups, get().activeGroupIds),
+  flattened: () => flattenGroups(get().groups),
 
   saveAndReload: async () => {
-    const snapshot = { groups: get().groups, activeGroupIds: get().activeGroupIds }
-    await syncNow(snapshot)
+    const groups = get().groups
+    await syncNow(groups)
     if (!isTauri()) return null
     try {
       const count = await invoke<number>("hub_reload_plugins")

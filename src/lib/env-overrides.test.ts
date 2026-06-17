@@ -22,8 +22,6 @@ import {
   parseValueInput,
   loadEnvGroups,
   saveEnvGroups,
-  loadActiveGroupIds,
-  saveActiveGroupIds,
   normalizeGroups,
   resetEnvMigrationForTest,
   type EnvGroup,
@@ -106,20 +104,39 @@ describe("persistence", () => {
     const groups: EnvGroup[] = [{ id: "g1", name: "Dev", enabled: true, overrides: [{ name: "A", value: "api" }] }]
     await saveEnvGroups(groups)
     await expect(loadEnvGroups()).resolves.toEqual(groups)
+    expect(storeState.get("envSchemaVersion")).toBe(2)
   })
-  it("loadActiveGroupIds returns [] by default", async () => {
-    await expect(loadActiveGroupIds()).resolves.toEqual([])
+
+  it("migrates env.json activeGroupIds into group enabled flags", async () => {
+    storeState.set("groups", [
+      { id: "g1", name: "Dev", enabled: true, overrides: [] },
+      { id: "g2", name: "Prod", enabled: false, overrides: [] },
+    ])
+    storeState.set("activeGroupIds", ["g2"])
+
+    await expect(loadEnvGroups()).resolves.toEqual([
+      { id: "g1", name: "Dev", enabled: false, overrides: [] },
+      { id: "g2", name: "Prod", enabled: true, overrides: [] },
+    ])
+    expect(storeState.get("envSchemaVersion")).toBe(2)
+    expect(storeState.has("activeGroupIds")).toBe(false)
   })
-  it("saveActiveGroupIds round-trips", async () => {
-    const ids = ["g1", "g3"]
-    await saveActiveGroupIds(ids)
-    await expect(loadActiveGroupIds()).resolves.toEqual(ids)
+
+  it("keeps env.json v2 group enabled flags without activeGroupIds", async () => {
+    storeState.set("envSchemaVersion", 2)
+    storeState.set("groups", [
+      { id: "g1", name: "Dev", enabled: false, overrides: [] },
+      { id: "g2", name: "Prod", enabled: true, overrides: [] },
+    ])
+    storeState.set("activeGroupIds", ["g1"])
+
+    await expect(loadEnvGroups()).resolves.toEqual([
+      { id: "g1", name: "Dev", enabled: false, overrides: [] },
+      { id: "g2", name: "Prod", enabled: true, overrides: [] },
+    ])
+    expect(storeState.has("activeGroupIds")).toBe(false)
   })
-  it("loadActiveGroupIds filters to existing group ids", async () => {
-    storeState.set("groups", [{ id: "g1", name: "Dev", enabled: true, overrides: [] }])
-    storeState.set("activeGroupIds", ["g1", "ghost"])
-    await expect(loadActiveGroupIds()).resolves.toEqual(["g1"])
-  })
+
   it("loadEnvGroups migrates legacy envOverrides into a Default group", async () => {
     // Legacy data lives in settings.json, keyed as "envOverrides".
     // The mock shares a single Map across all LazyStore instances, so
@@ -133,5 +150,7 @@ describe("persistence", () => {
     expect(storeState.has("envOverrides")).toBe(false)
     // New data should be in env.json format.
     expect(storeState.has("groups")).toBe(true)
+    expect(storeState.get("envSchemaVersion")).toBe(2)
+    expect(storeState.has("activeGroupIds")).toBe(false)
   })
 })

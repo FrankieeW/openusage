@@ -27,7 +27,7 @@ describe("EnvPage", () => {
   beforeEach(() => {
     storeState.clear()
     invokeMock.mockClear()
-    useEnvOverridesStore.setState({ groups: [], activeGroupIds: [], loaded: false })
+    useEnvOverridesStore.setState({ groups: [], loaded: false })
   })
 
   it("shows an empty state when there are no groups", async () => {

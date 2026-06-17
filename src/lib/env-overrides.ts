@@ -23,6 +23,8 @@ export const envStore = new LazyStore(ENV_STORE_PATH)
 
 const GROUPS_KEY = "groups"
 const ACTIVE_KEY = "activeGroupIds"
+const SCHEMA_KEY = "envSchemaVersion"
+const CURRENT_ENV_SCHEMA_VERSION = 2
 
 // Legacy keys in settings.json (migrated once → then deleted).
 const LEGACY_GROUPS_KEY = "envGroups"
@@ -86,18 +88,21 @@ export function normalizeGroups(raw: unknown): EnvGroup[] {
 // One-time migration from settings.json → env.json
 // ---------------------------------------------------------------------------
 
-type StoreWithDelete = { delete?: (key: string) => Promise<void> }
+type StoreWithDelete = {
+  delete?: (key: string) => Promise<void>
+  set: (key: string, value: unknown) => Promise<void>
+}
 
-async function deleteSettingsKey(key: string): Promise<void> {
+async function deleteStoreKey(store: StoreWithDelete, key: string): Promise<void> {
   try {
-    const maybeDelete = (settingsStore as unknown as StoreWithDelete).delete
+    const maybeDelete = store.delete
     if (typeof maybeDelete === "function") {
-      await maybeDelete.call(settingsStore, key)
+      await maybeDelete.call(store, key)
     } else {
-      await settingsStore.set(key, null)
+      await store.set(key, null)
     }
   } catch {
-    // Best-effort — the key will linger in settings.json harmlessly.
+    // Best-effort — stale keys are harmless after the schema marker is written.
   }
 }
 
@@ -108,12 +113,33 @@ export function resetEnvMigrationForTest(): void {
   migrationDone = false
 }
 
+function applyActiveIdsToGroups(groups: EnvGroup[], rawActiveIds: unknown): EnvGroup[] {
+  if (!Array.isArray(rawActiveIds)) return groups
+  const active = new Set(rawActiveIds.filter((id): id is string => typeof id === "string"))
+  return groups.map((group) => ({ ...group, enabled: active.has(group.id) }))
+}
+
+async function writeEnvGroupsV2(groups: EnvGroup[]): Promise<void> {
+  await envStore.set(GROUPS_KEY, groups)
+  await envStore.set(SCHEMA_KEY, CURRENT_ENV_SCHEMA_VERSION)
+  await deleteStoreKey(envStore as unknown as StoreWithDelete, ACTIVE_KEY)
+  await envStore.save()
+}
+
 async function migrateToEnvFile(): Promise<void> {
   if (migrationDone) return
 
   // Already have data in env.json?
   const existing = await envStore.get<unknown>(GROUPS_KEY)
   if (existing !== null && existing !== undefined) {
+    const schemaVersion = await envStore.get<unknown>(SCHEMA_KEY)
+    const rawActive = await envStore.get<unknown>(ACTIVE_KEY)
+    const groups = normalizeGroups(existing)
+    const migrated =
+      schemaVersion === CURRENT_ENV_SCHEMA_VERSION
+        ? groups
+        : applyActiveIdsToGroups(groups, rawActive)
+    await writeEnvGroupsV2(migrated)
     migrationDone = true
     return
   }
@@ -121,16 +147,14 @@ async function migrateToEnvFile(): Promise<void> {
   // Try groups format first (already migrated in settings.json)
   const legacyGroups = await settingsStore.get<unknown>(LEGACY_GROUPS_KEY)
   if (legacyGroups !== null && legacyGroups !== undefined) {
-    await envStore.set(GROUPS_KEY, legacyGroups)
+    let groups = normalizeGroups(legacyGroups)
     const legacyActive = await settingsStore.get<unknown>(LEGACY_ACTIVE_KEY)
-    if (Array.isArray(legacyActive)) {
-      await envStore.set(ACTIVE_KEY, legacyActive)
-    }
-    await envStore.save()
+    groups = applyActiveIdsToGroups(groups, legacyActive)
+    await writeEnvGroupsV2(groups)
     // Clean up settings.json
-    await deleteSettingsKey(LEGACY_GROUPS_KEY)
-    await deleteSettingsKey(LEGACY_ACTIVE_KEY)
-    await deleteSettingsKey(LEGACY_OVERRIDES_KEY)
+    await deleteStoreKey(settingsStore as unknown as StoreWithDelete, LEGACY_GROUPS_KEY)
+    await deleteStoreKey(settingsStore as unknown as StoreWithDelete, LEGACY_ACTIVE_KEY)
+    await deleteStoreKey(settingsStore as unknown as StoreWithDelete, LEGACY_OVERRIDES_KEY)
     await settingsStore.save()
     migrationDone = true
     return
@@ -152,10 +176,8 @@ async function migrateToEnvFile(): Promise<void> {
       enabled: true,
       overrides: Array.from(byName.values()),
     }
-    await envStore.set(GROUPS_KEY, [group])
-    await envStore.set(ACTIVE_KEY, [id])
-    await envStore.save()
-    await deleteSettingsKey(LEGACY_OVERRIDES_KEY)
+    await writeEnvGroupsV2([group])
+    await deleteStoreKey(settingsStore as unknown as StoreWithDelete, LEGACY_OVERRIDES_KEY)
     await settingsStore.save()
   }
 
@@ -173,24 +195,5 @@ export async function loadEnvGroups(): Promise<EnvGroup[]> {
 }
 
 export async function saveEnvGroups(groups: EnvGroup[]): Promise<void> {
-  await envStore.set(GROUPS_KEY, groups)
-  await envStore.save()
-}
-
-export async function loadActiveGroupIds(
-  existingGroups?: EnvGroup[],
-): Promise<string[]> {
-  const ids = await envStore.get<unknown>(ACTIVE_KEY)
-  if (!Array.isArray(ids)) return []
-  const groups = existingGroups ?? (await loadEnvGroups())
-  if (groups.length === 0) {
-    return ids.filter((x): x is string => typeof x === "string")
-  }
-  const known = new Set(groups.map((g) => g.id))
-  return ids.filter((x): x is string => typeof x === "string" && known.has(x))
-}
-
-export async function saveActiveGroupIds(ids: string[]): Promise<void> {
-  await envStore.set(ACTIVE_KEY, ids)
-  await envStore.save()
+  await writeEnvGroupsV2(groups)
 }
