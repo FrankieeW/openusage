@@ -19,6 +19,7 @@ const {
   loadStartOnLoginMock,
   loadThemeModeMock,
   loadTimeFormatModeMock,
+  loadUnsafeAllowAllEnvMock,
   migrateLegacyTraySettingsMock,
   migrateWindsurfToDevinMock,
   normalizePluginSettingsMock,
@@ -41,6 +42,7 @@ const {
   loadStartOnLoginMock: vi.fn(),
   loadThemeModeMock: vi.fn(),
   loadTimeFormatModeMock: vi.fn(),
+  loadUnsafeAllowAllEnvMock: vi.fn(),
   migrateLegacyTraySettingsMock: vi.fn(),
   migrateWindsurfToDevinMock: vi.fn(),
   normalizePluginSettingsMock: vi.fn(),
@@ -80,6 +82,7 @@ vi.mock("@/lib/settings", () => ({
   loadStartOnLogin: loadStartOnLoginMock,
   loadThemeMode: loadThemeModeMock,
   loadTimeFormatMode: loadTimeFormatModeMock,
+  loadUnsafeAllowAllEnv: loadUnsafeAllowAllEnvMock,
   migrateLegacyTraySettings: migrateLegacyTraySettingsMock,
   migrateWindsurfToDevin: migrateWindsurfToDevinMock,
   normalizePluginSettings: normalizePluginSettingsMock,
@@ -99,6 +102,7 @@ function createArgs() {
     setTimeFormatMode: vi.fn(),
     setGlobalShortcut: vi.fn(),
     setStartOnLogin: vi.fn(),
+    setUnsafeAllowAllEnv: vi.fn(),
     setMenubarIconStyle: vi.fn(),
     setMenubarMetric: vi.fn(),
     setLoadingForPlugins: vi.fn(),
@@ -126,6 +130,7 @@ describe("useSettingsBootstrap", () => {
     loadStartOnLoginMock.mockReset()
     loadThemeModeMock.mockReset()
     loadTimeFormatModeMock.mockReset()
+    loadUnsafeAllowAllEnvMock.mockReset()
     migrateLegacyTraySettingsMock.mockReset()
     migrateWindsurfToDevinMock.mockReset()
     normalizePluginSettingsMock.mockReset()
@@ -154,6 +159,7 @@ describe("useSettingsBootstrap", () => {
     loadGlobalShortcutMock.mockResolvedValue("CommandOrControl+Shift+O")
     loadMenubarIconStyleMock.mockResolvedValue("provider")
     loadMenubarMetricMock.mockResolvedValue("default")
+    loadUnsafeAllowAllEnvMock.mockResolvedValue(false)
     loadStartOnLoginMock.mockResolvedValue(true)
     migrateLegacyTraySettingsMock.mockResolvedValue(undefined)
     migrateWindsurfToDevinMock.mockImplementation((settings) => settings)

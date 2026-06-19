@@ -1,5 +1,54 @@
 # Changelog
 
+## v1.0.7
+
+### New Features
+- Track Hub plugin package identity by @FrankieeW
+- Improve Hub source safety by @FrankieeW
+
+### Bug Fixes
+- Fix macOS 27 tray click routing by clearing the status item button action and manually opening the menu on right-click by @FrankieeW
+- Make environment group enabled state authoritative by @FrankieeW
+- Show the default Hub source label as `default` by @FrankieeW
+- Keep Hub source badges and status text from crowding plugin/source names by @FrankieeW
+
+### Chores
+- Document macOS 27 tray click routing design and implementation plan by @FrankieeW
+- Document Hub source package identity and safety model by @FrankieeW
+- Update recommended Hub sources with a tested Codex reset credits source by @FrankieeW
+- Update release-tag guidance and disable blank issue links by @FrankieeW
+- Sync and revert upstream retirement notice work; no retirement notice ships in this release by @FrankieeW and @robinebers
+
+---
+
+### Changelog
+
+**Full Changelog**: [v1.0.6...v1.0.7](https://github.com/FrankieeW/openusage/compare/v1.0.6...v1.0.7)
+
+- [ff9e8ca](https://github.com/FrankieeW/openusage/commit/ff9e8ca794746092c4c560ee7df715da84bc986c) feat: add retirement notice banner to overview by @robinebers
+- [d4b8564](https://github.com/FrankieeW/openusage/commit/d4b8564b8c63890ea11159c22ffd83607a48b27e) fix: show retirement notice when stored state fails to load by @robinebers
+- [7d51e5b](https://github.com/FrankieeW/openusage/commit/7d51e5b0a8c8a4f939ecc2887fce71f93fd8b8d7) fix: treat future/negative retirement dismissal timestamps as invalid by @robinebers
+- [6dfbc5e](https://github.com/robinebers/openusage/pull/616) Merge pull request #616 from robinebers/feat/retirement-notice-banner by @robinebers
+- [189549d](https://github.com/FrankieeW/openusage/commit/189549d75c4f549adc40e259929be226a41b19b7) merge: sync upstream/main (retirement notice banner) by @FrankieeW
+- [be7f8e8](https://github.com/FrankieeW/openusage/commit/be7f8e814e3a0308a7767e9a09f9ceee59fecad8) Revert "merge: sync upstream/main (retirement notice banner)" by @FrankieeW
+- [c56bc72](https://github.com/FrankieeW/openusage/commit/c56bc72fa3c118360955dc46cc25d64dceae70ea) docs: macOS 27 tray click routing design spec by @FrankieeW
+- [176f053](https://github.com/FrankieeW/openusage/commit/176f053b193070d09cf8ea7c7444b56b180f59da) docs: implementation plan for macOS 27 tray click routing by @FrankieeW
+- [8ce16cf](https://github.com/FrankieeW/openusage/commit/8ce16cf619dcc50f6af86a32492d16933203566a) docs: revise spec and plan to re-query NSMenu from NSStatusItem by @FrankieeW
+- [80a15d5](https://github.com/FrankieeW/openusage/commit/80a15d50de31d0fadfac4de5e1ae1e04e1069d2a) fix(tray): add imports for macOS 27 click-routing override by @FrankieeW
+- [4973758](https://github.com/FrankieeW/openusage/commit/4973758a3a8b5be3d2fad656f9110913eba6b6a1) fix(tray): clear NSStatusItem.button target/action on macOS 27 by @FrankieeW
+- [f991bb7](https://github.com/FrankieeW/openusage/commit/f991bb74c7c7939d23bfc40cf55bf9f63ee7fea6) fix(tray): pop up menu on right-click via objc2 (macOS 27) by @FrankieeW
+- [f87ea63](https://github.com/FrankieeW/openusage/commit/f87ea63f0767a2e3740e32f5344ef88017c07e96) fix(tray): tighten unsafe scope in right-click pop-up arm by @FrankieeW
+- [b91e078](https://github.com/FrankieeW/openusage/commit/b91e078a1c671b20def5e2d87eedf82a0fc2b9d1) docs(tray): sharpen hand-off comment for the macOS 27 override by @FrankieeW
+- [cec0085](https://github.com/FrankieeW/openusage/commit/cec008547067b4fc3b12bebe620e3a1da1861aa3) fix(env): make group enabled authoritative by @FrankieeW
+- [3b9f054](https://github.com/FrankieeW/openusage/commit/3b9f0545822483480007f95c4ad2341009bd6d3d) feat(hub): track plugin package identity by @FrankieeW
+- [54fa6db](https://github.com/FrankieeW/openusage/commit/54fa6db43abcfe5840c31e4c1d510bf40b326b5c) docs(hub): document source package identity by @FrankieeW
+- [db1c3c5](https://github.com/FrankieeW/openusage/commit/db1c3c55b25bc65b515964183ab182d09ce002a6) Update release-tag guidance and disable blank issue links by @FrankieeW
+- [9be8cc8](https://github.com/FrankieeW/openusage/commit/9be8cc8e796e1703fba181659da73101ad89922a) feat(hub): improve source safety by @FrankieeW
+- [42a31e1](https://github.com/FrankieeW/openusage/commit/42a31e1139b928a1c09892de838d89e603d14f24) docs(hub): document safety model by @FrankieeW
+- [5e62d66](https://github.com/FrankieeW/openusage/commit/5e62d66048c4eb8ef5dc1876851d53e3c4230d99) fix(hub): show default source label by @FrankieeW
+- [9360ce3](https://github.com/FrankieeW/openusage/commit/9360ce30dd3e8618a7f7514f7a9b639fde34cf3e) docs(hub): update source recommendations by @FrankieeW
+- [e6a335f](https://github.com/FrankieeW/openusage/commit/e6a335f78f8ef65fcb843cfe8e0ef8ee57da931a) fix(hub): keep badges off names by @FrankieeW
+
 ## v0.6.27
 
 ### Bug Fixes

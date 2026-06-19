@@ -19,6 +19,8 @@ const state = vi.hoisted(() => ({
   saveDisplayModeMock: vi.fn(),
   loadResetTimerDisplayModeMock: vi.fn(),
   saveResetTimerDisplayModeMock: vi.fn(),
+  loadTimeFormatModeMock: vi.fn(),
+  saveTimeFormatModeMock: vi.fn(),
   loadMenubarIconStyleMock: vi.fn(),
   saveMenubarIconStyleMock: vi.fn(),
   loadMenubarMetricMock: vi.fn(),
@@ -28,6 +30,8 @@ const state = vi.hoisted(() => ({
   saveGlobalShortcutMock: vi.fn(),
   loadStartOnLoginMock: vi.fn(),
   saveStartOnLoginMock: vi.fn(),
+  loadUnsafeAllowAllEnvMock: vi.fn(),
+  saveUnsafeAllowAllEnvMock: vi.fn(),
   autostartEnableMock: vi.fn(),
   autostartDisableMock: vi.fn(),
   autostartIsEnabledMock: vi.fn(),
@@ -229,6 +233,8 @@ vi.mock("@/lib/settings", async () => {
     saveDisplayMode: state.saveDisplayModeMock,
     loadResetTimerDisplayMode: state.loadResetTimerDisplayModeMock,
     saveResetTimerDisplayMode: state.saveResetTimerDisplayModeMock,
+    loadTimeFormatMode: state.loadTimeFormatModeMock,
+    saveTimeFormatMode: state.saveTimeFormatModeMock,
     loadMenubarIconStyle: state.loadMenubarIconStyleMock,
     saveMenubarIconStyle: state.saveMenubarIconStyleMock,
     loadMenubarMetric: state.loadMenubarMetricMock,
@@ -238,6 +244,8 @@ vi.mock("@/lib/settings", async () => {
     saveGlobalShortcut: state.saveGlobalShortcutMock,
     loadStartOnLogin: state.loadStartOnLoginMock,
     saveStartOnLogin: state.saveStartOnLoginMock,
+    loadUnsafeAllowAllEnv: state.loadUnsafeAllowAllEnvMock,
+    saveUnsafeAllowAllEnv: state.saveUnsafeAllowAllEnvMock,
   }
 })
 
@@ -269,6 +277,8 @@ describe("App", () => {
     state.saveDisplayModeMock.mockReset()
     state.loadResetTimerDisplayModeMock.mockReset()
     state.saveResetTimerDisplayModeMock.mockReset()
+    state.loadTimeFormatModeMock.mockReset()
+    state.saveTimeFormatModeMock.mockReset()
     state.loadMenubarIconStyleMock.mockReset()
     state.saveMenubarIconStyleMock.mockReset()
     state.loadMenubarMetricMock.mockReset()
@@ -278,6 +288,8 @@ describe("App", () => {
     state.saveGlobalShortcutMock.mockReset()
     state.loadStartOnLoginMock.mockReset()
     state.saveStartOnLoginMock.mockReset()
+    state.loadUnsafeAllowAllEnvMock.mockReset()
+    state.saveUnsafeAllowAllEnvMock.mockReset()
     state.autostartEnableMock.mockReset()
     state.autostartDisableMock.mockReset()
     state.autostartIsEnabledMock.mockReset()
@@ -309,6 +321,8 @@ describe("App", () => {
     state.saveDisplayModeMock.mockResolvedValue(undefined)
     state.loadResetTimerDisplayModeMock.mockResolvedValue("relative")
     state.saveResetTimerDisplayModeMock.mockResolvedValue(undefined)
+    state.loadTimeFormatModeMock.mockResolvedValue("auto")
+    state.saveTimeFormatModeMock.mockResolvedValue(undefined)
     state.loadMenubarIconStyleMock.mockResolvedValue("provider")
     state.saveMenubarIconStyleMock.mockResolvedValue(undefined)
     state.loadMenubarMetricMock.mockResolvedValue("default")
@@ -318,6 +332,8 @@ describe("App", () => {
     state.saveGlobalShortcutMock.mockResolvedValue(undefined)
     state.loadStartOnLoginMock.mockResolvedValue(false)
     state.saveStartOnLoginMock.mockResolvedValue(undefined)
+    state.loadUnsafeAllowAllEnvMock.mockResolvedValue(false)
+    state.saveUnsafeAllowAllEnvMock.mockResolvedValue(undefined)
     state.autostartEnableMock.mockResolvedValue(undefined)
     state.autostartDisableMock.mockResolvedValue(undefined)
     state.autostartIsEnabledMock.mockResolvedValue(false)
@@ -668,12 +684,12 @@ describe("App", () => {
 
     // Open about via version button in footer
     await userEvent.click(await screen.findByRole("button", { name: /OpenUsage/i }))
-    await screen.findByText("Built by")
+    await screen.findByText("Originally by")
 
     // Close about via ESC key
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
     await waitFor(() => {
-      expect(screen.queryByText("Built by")).not.toBeInTheDocument()
+      expect(screen.queryByText("Originally by")).not.toBeInTheDocument()
     })
   })
 
