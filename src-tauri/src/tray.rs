@@ -14,6 +14,43 @@ use crate::panel::{get_or_init_panel, position_panel_at_tray_icon, show_panel};
 
 const LOG_LEVEL_STORE_KEY: &str = "logLevel";
 const DEFAULT_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Error;
+const LOG_LEVEL_MENU_ITEMS: [(&str, log::LevelFilter); 5] = [
+    ("log_error", log::LevelFilter::Error),
+    ("log_warn", log::LevelFilter::Warn),
+    ("log_info", log::LevelFilter::Info),
+    ("log_debug", log::LevelFilter::Debug),
+    ("log_trace", log::LevelFilter::Trace),
+];
+
+struct LogLevelMenuItems {
+    items: [(CheckMenuItem<tauri::Wry>, log::LevelFilter); 5],
+}
+
+impl LogLevelMenuItems {
+    fn set_checked_level(&self, selected_level: log::LevelFilter) -> Result<(), String> {
+        let checks = checked_log_level_items(selected_level);
+        let mut first_error: Option<String> = None;
+
+        for ((item, _), (_, checked)) in self.items.iter().zip(checks) {
+            if let Err(error) = item.set_checked(checked) {
+                let message = error.to_string();
+                log::error!("Failed to sync debug level menu item: {}", message);
+                if first_error.is_none() {
+                    first_error = Some(message);
+                }
+            }
+        }
+
+        match first_error {
+            Some(error) => Err(format!("failed to sync debug level menu: {}", error)),
+            None => Ok(()),
+        }
+    }
+}
+
+fn checked_log_level_items(selected_level: log::LevelFilter) -> [(&'static str, bool); 5] {
+    LOG_LEVEL_MENU_ITEMS.map(|(id, level)| (id, level == selected_level))
+}
 
 pub fn parse_log_level(value: &str) -> Option<log::LevelFilter> {
     match value.trim().to_ascii_lowercase().as_str() {
@@ -74,6 +111,21 @@ pub fn set_stored_log_level(
     Ok(())
 }
 
+pub fn sync_log_level_menu(app_handle: &AppHandle, level: log::LevelFilter) -> Result<(), String> {
+    let Some(menu_items) = app_handle.try_state::<LogLevelMenuItems>() else {
+        let message = "debug level menu state is not initialized";
+        log::error!("{}", message);
+        return Err(message.to_string());
+    };
+
+    menu_items.set_checked_level(level)
+}
+
+pub fn save_log_level(app_handle: &AppHandle, level: log::LevelFilter) -> Result<(), String> {
+    set_stored_log_level(app_handle, level)?;
+    sync_log_level_menu(app_handle, level)
+}
+
 pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
     let tray_icon_path = app_handle
         .path()
@@ -93,7 +145,8 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
         None::<&str>,
     )?;
 
-    // Log level submenu - clone items for use in event handler
+    // Log level submenu items are shared with Settings so both surfaces keep
+    // the same checked state.
     let log_error = CheckMenuItem::with_id(
         app_handle,
         "log_error",
@@ -157,14 +210,18 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
-    // Clone for capture in event handler
-    let log_items = [
-        (log_error.clone(), log::LevelFilter::Error),
-        (log_warn.clone(), log::LevelFilter::Warn),
-        (log_info.clone(), log::LevelFilter::Info),
-        (log_debug.clone(), log::LevelFilter::Debug),
-        (log_trace.clone(), log::LevelFilter::Trace),
-    ];
+    let log_items = LogLevelMenuItems {
+        items: [
+            (log_error.clone(), log::LevelFilter::Error),
+            (log_warn.clone(), log::LevelFilter::Warn),
+            (log_info.clone(), log::LevelFilter::Info),
+            (log_debug.clone(), log::LevelFilter::Debug),
+            (log_trace.clone(), log::LevelFilter::Trace),
+        ],
+    };
+    if !app_handle.manage(log_items) {
+        log::error!("Debug level menu state was already initialized");
+    }
 
     let separator = PredefinedMenuItem::separator(app_handle)?;
     let about = MenuItem::with_id(app_handle, "about", "About OpenUsage", true, None::<&str>)?;
@@ -182,8 +239,10 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
+    #[cfg(target_os = "macos")]
     let context_menu = menu.clone();
-    let tray = TrayIconBuilder::with_id("tray")
+
+    let tray_builder = TrayIconBuilder::with_id("tray")
         .icon(icon)
         .tooltip("OpenUsage")
         .show_menu_on_left_click(false)
@@ -215,13 +274,8 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                         "log_trace" => log::LevelFilter::Trace,
                         _ => unreachable!(),
                     };
-                    if let Err(error) = set_stored_log_level(app_handle, selected_level) {
+                    if let Err(error) = save_log_level(app_handle, selected_level) {
                         log::error!("tray menu: failed to set log level: {}", error);
-                        return;
-                    }
-                    // Update all checkmarks - only the selected level should be checked
-                    for (item, level) in &log_items {
-                        let _ = item.set_checked(*level == selected_level);
                     }
                 }
                 "copy_log_path" => match log_path::copy_to_clipboard(app_handle) {
@@ -262,12 +316,15 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                     position_panel_at_tray_icon(app_handle, rect.position, rect.size);
                 }
                 MouseButton::Right => {
-                    if let Err(error) = tray.set_menu(Some(context_menu.clone())) {
-                        log::error!("tray right-click: failed to attach context menu: {}", error);
-                        return;
-                    }
                     #[cfg(target_os = "macos")]
                     {
+                        if let Err(error) = tray.set_menu(Some(context_menu.clone())) {
+                            log::error!(
+                                "tray right-click: failed to attach context menu: {}",
+                                error
+                            );
+                            return;
+                        }
                         let _ = tray.with_inner_tray_icon(|inner| {
                             let mtm = objc2_foundation::MainThreadMarker::new()
                                 .expect("with_inner_tray_icon closure must run on the main thread");
@@ -280,15 +337,22 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                             let button = status.button(mtm).unwrap();
                             let _: () = unsafe { msg_send![&button, popUpStatusItemMenu: &*menu] };
                         });
-                    }
-                    if let Err(error) = tray.set_menu::<Menu<tauri::Wry>>(None) {
-                        log::error!("tray right-click: failed to detach context menu: {}", error);
+                        if let Err(error) = tray.set_menu::<Menu<tauri::Wry>>(None) {
+                            log::error!(
+                                "tray right-click: failed to detach context menu: {}",
+                                error
+                            );
+                        }
                     }
                 }
                 MouseButton::Middle => {}
             }
-        })
-        .build(app_handle)?;
+        });
+
+    #[cfg(not(target_os = "macos"))]
+    let tray_builder = tray_builder.menu(&menu);
+
+    let tray = tray_builder.build(app_handle)?;
 
     // macOS 27 click-routing override (issue #573): do not attach the menu to
     // NSStatusItem. A directly attached menu can preempt left-click handling and
@@ -320,7 +384,7 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{log_level_to_str, parse_log_level};
+    use super::{checked_log_level_items, log_level_to_str, parse_log_level};
 
     #[test]
     fn parses_supported_log_levels() {
@@ -345,5 +409,19 @@ mod tests {
         assert_eq!(log_level_to_str(log::LevelFilter::Info), "info");
         assert_eq!(log_level_to_str(log::LevelFilter::Debug), "debug");
         assert_eq!(log_level_to_str(log::LevelFilter::Trace), "trace");
+    }
+
+    #[test]
+    fn checks_only_the_selected_log_level_menu_item() {
+        assert_eq!(
+            checked_log_level_items(log::LevelFilter::Debug),
+            [
+                ("log_error", false),
+                ("log_warn", false),
+                ("log_info", false),
+                ("log_debug", true),
+                ("log_trace", false),
+            ],
+        );
     }
 }

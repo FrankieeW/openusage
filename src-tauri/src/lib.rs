@@ -391,7 +391,7 @@ fn save_log_level(app_handle: tauri::AppHandle, level: String) -> Result<(), Str
         log::warn!("Rejected invalid debug level from frontend: {}", level);
         return Err("Invalid debug level".to_string());
     };
-    tray::set_stored_log_level(&app_handle, parsed).map_err(|error| {
+    tray::save_log_level(&app_handle, parsed).map_err(|error| {
         log::error!("Failed to save debug level: {}", error);
         "Failed to save debug level".to_string()
     })
