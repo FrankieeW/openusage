@@ -69,9 +69,7 @@ describe("labelForSourceTrust", () => {
   }
 
   it("maps source trust tiers", () => {
-    expect(labelForSourceTrust(source({ id: "default" }))).toBe(
-      "Curated / Default",
-    )
+    expect(labelForSourceTrust(source({ id: "default" }))).toBe("default")
     expect(labelForSourceTrust(source({ kind: "Github" }))).toBe("Community")
     expect(labelForSourceTrust(source({ kind: "LocalPath" }))).toBe(
       "Local Development",

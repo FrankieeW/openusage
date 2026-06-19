@@ -49,7 +49,7 @@ export function labelForSourceKind(kind: string): string {
 
 export function labelForSourceTrust(source: Source | null | undefined): string {
   if (!source) return "Local Development"
-  if (source.id === DEFAULT_HUB_ID) return "Curated / Default"
+  if (source.id === DEFAULT_HUB_ID) return "default"
   if (source.kind === "LocalPath") return "Local Development"
   if (source.kind === "GenericGit") return "Unknown Git Source"
   return "Community"
@@ -58,7 +58,7 @@ export function labelForSourceTrust(source: Source | null | undefined): string {
 export function descriptionForSourceTrust(source: Source | null | undefined): string {
   const label = labelForSourceTrust(source)
   switch (label) {
-    case "Curated / Default":
+    case "default":
       return "Built-In Recommended Source"
     case "Community":
       return "User Added GitHub Source"
