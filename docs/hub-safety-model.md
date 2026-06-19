@@ -8,7 +8,7 @@ the install preview.
 
 Hub labels sources by trust level:
 
-- **Curated / Default**: the built-in recommended source.
+- **default**: the built-in recommended source.
 - **Community**: a user-added GitHub source.
 - **Local Development**: a local folder on this machine.
 - **Unknown Git Source**: a non-GitHub git source.

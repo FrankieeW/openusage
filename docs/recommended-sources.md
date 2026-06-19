@@ -3,7 +3,7 @@
 Plugin sources you can add in the Hub (**Add Source**). Add one by pasting its
 URL into **Add Source**.
 
-Last checked: 2026-06-17.
+Last checked: 2026-06-19.
 
 For install checks and source trust labels, see [Hub Safety Model](hub-safety-model.md).
 
@@ -23,6 +23,7 @@ comfortable trusting that source.
 | Provider | Source | Notes |
 | --- | --- | --- |
 | Multiple | https://github.com/barramee27/crossusage | Large community source with extra providers including Ollama, Fireworks AI, Command Code, CrofAI, Neuralwatt, and Cursor Nightly. |
+| Codex | https://github.com/rogdex24/openusage/tree/feat/codex-reset-credits | Branch source for Codex reset credits. Installed and tried locally. |
 | OpenRouter | https://github.com/ExTV/openusage/tree/feat/openrouter-provider | Branch source for OpenRouter. Recently synced with upstream when checked. |
 | Warp | https://github.com/JulianKniephoff/openusage/tree/feat/warp | Branch source for Warp. Also includes Gemini and Windsurf. |
 | Pioneer | https://github.com/andrew54068/openusage/tree/feat/pioneer-plugin | Branch source for Pioneer. Also includes Gemini and Windsurf. |
