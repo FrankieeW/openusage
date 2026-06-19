@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, within } from "@testing-library/react"
 import type { ReactNode } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -61,6 +61,9 @@ const defaultProps = {
   onMenubarIconStyleChange: vi.fn(),
   menubarMetric: "default" as const,
   onMenubarMetricChange: vi.fn(),
+  logLevel: "info" as const,
+  onLogLevelChange: vi.fn(),
+  onCopyLogPath: vi.fn().mockResolvedValue(undefined),
   traySettingsPreview: {
     bars: [{ id: "a", fraction: 0.7 }],
     providerBars: [{ id: "a", fraction: 0.7 }],
@@ -159,6 +162,51 @@ describe("SettingsPage", () => {
     )
     await userEvent.click(screen.getByText("Dark"))
     expect(onThemeModeChange).toHaveBeenCalledWith("dark")
+  })
+
+  it("renders debug level section with log level options", () => {
+    render(<SettingsPage {...defaultProps} />)
+    expect(screen.getByText("Debug Level")).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "Error" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "Warn" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "Info" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "Debug" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "Trace" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Copy Log Path" })).toBeInTheDocument()
+  })
+
+  it("uses a compact wrapped layout for debug level options", () => {
+    render(<SettingsPage {...defaultProps} />)
+    const debugTools = screen.getByRole("group", { name: "Debug tools" })
+    expect(debugTools).toHaveClass("grid")
+    expect(debugTools).toHaveClass("grid-cols-3")
+    expect(within(debugTools).getAllByRole("radio")).toHaveLength(5)
+    expect(within(debugTools).getByRole("button", { name: "Copy Log Path" })).toBeInTheDocument()
+  })
+
+  it("updates debug level", async () => {
+    const onLogLevelChange = vi.fn()
+    render(
+      <SettingsPage
+        {...defaultProps}
+        onLogLevelChange={onLogLevelChange}
+      />
+    )
+    await userEvent.click(screen.getByRole("radio", { name: "Debug" }))
+    expect(onLogLevelChange).toHaveBeenCalledWith("debug")
+  })
+
+  it("copies the log path from the debug level section", async () => {
+    const onCopyLogPath = vi.fn().mockResolvedValue(undefined)
+    render(
+      <SettingsPage
+        {...defaultProps}
+        onCopyLogPath={onCopyLogPath}
+      />
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Copy Log Path" }))
+    expect(onCopyLogPath).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument()
   })
 
   it("updates display mode", async () => {

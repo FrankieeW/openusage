@@ -381,6 +381,23 @@ fn set_allow_all_env(enabled: bool) {
 }
 
 #[tauri::command]
+fn load_log_level(app_handle: tauri::AppHandle) -> String {
+    tray::get_stored_log_level_value(&app_handle).to_string()
+}
+
+#[tauri::command]
+fn save_log_level(app_handle: tauri::AppHandle, level: String) -> Result<(), String> {
+    let Some(parsed) = tray::parse_log_level(&level) else {
+        log::warn!("Rejected invalid debug level from frontend: {}", level);
+        return Err("Invalid debug level".to_string());
+    };
+    tray::set_stored_log_level(&app_handle, parsed).map_err(|error| {
+        log::error!("Failed to save debug level: {}", error);
+        "Failed to save debug level".to_string()
+    })
+}
+
+#[tauri::command]
 fn set_env_overrides(overrides: Vec<EnvOverrideDto>) {
     plugin_engine::host_api::set_env_overrides(map_env_overrides(overrides));
 }
@@ -562,6 +579,14 @@ fn get_log_path(app_handle: tauri::AppHandle) -> Result<String, String> {
     log_path::for_app(&app_handle).map(|path| path.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn copy_log_path(app_handle: tauri::AppHandle) -> Result<(), String> {
+    log_path::copy_to_clipboard(&app_handle).map_err(|error| {
+        log::error!("Failed to copy log path: {}", error);
+        "Failed to copy log path".to_string()
+    })
+}
+
 /// Update the global shortcut registration.
 /// Pass `null` to disable the shortcut, or a shortcut string like "CommandOrControl+Shift+U".
 #[cfg(desktop)]
@@ -729,7 +754,7 @@ pub fn run() {
                     Target::new(TargetKind::LogDir { file_name: None }),
                 ])
                 .max_file_size(10_000_000) // 10 MB
-                .level(log::LevelFilter::Trace) // Allow all levels; runtime filter via tray menu
+                .level(log::LevelFilter::Trace) // Allow all levels; runtime filter via tray or Settings
                 .level_for("hyper", log::LevelFilter::Warn)
                 .level_for("reqwest", log::LevelFilter::Warn)
                 .level_for("tao", log::LevelFilter::Info)
@@ -744,10 +769,13 @@ pub fn run() {
             hide_panel,
             open_devtools,
             set_allow_all_env,
+            load_log_level,
+            save_log_level,
             set_env_overrides,
             start_probe_batch,
             list_plugins,
             get_log_path,
+            copy_log_path,
             update_global_shortcut,
             hub::hub_list_sources,
             hub::hub_add_source,

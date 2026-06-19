@@ -23,6 +23,7 @@ import { getBarFillLayout, getTrayIconSizePx } from "@/lib/tray-bars-icon";
 import {
   AUTO_UPDATE_OPTIONS,
   DISPLAY_MODE_OPTIONS,
+  LOG_LEVEL_OPTIONS,
   MENUBAR_ICON_STYLE_OPTIONS,
   MENUBAR_METRIC_OPTIONS,
   RESET_TIMER_DISPLAY_OPTIONS,
@@ -31,6 +32,7 @@ import {
   type AutoUpdateIntervalMinutes,
   type DisplayMode,
   type GlobalShortcut,
+  type LogLevel,
   type MenubarIconStyle,
   type MenubarMetric,
   type ResetTimerDisplayMode,
@@ -61,6 +63,8 @@ function sourceVersionLabel(sourceLabel: string | null, version: string | null):
 const TRAY_PREVIEW_SIZE_PX = getTrayIconSizePx(1);
 
 const PREVIEW_BAR_TRACK_PX = 20;
+
+type CopyLogPathStatus = "idle" | "copying" | "copied" | "failed";
 
 function getPreviewBarLayout(fraction: number): { fillPercent: number; remainderPercent: number } {
   const { fillW, remainderDrawW } = getBarFillLayout(PREVIEW_BAR_TRACK_PX, fraction);
@@ -290,6 +294,9 @@ interface SettingsPageProps {
   onMenubarIconStyleChange: (value: MenubarIconStyle) => void;
   menubarMetric: MenubarMetric;
   onMenubarMetricChange: (value: MenubarMetric) => void;
+  logLevel: LogLevel;
+  onLogLevelChange: (value: LogLevel) => void;
+  onCopyLogPath: () => Promise<void>;
   traySettingsPreview: TraySettingsPreview;
   globalShortcut: GlobalShortcut;
   onGlobalShortcutChange: (value: GlobalShortcut) => void;
@@ -317,6 +324,9 @@ export function SettingsPage({
   onMenubarIconStyleChange,
   menubarMetric,
   onMenubarMetricChange,
+  logLevel,
+  onLogLevelChange,
+  onCopyLogPath,
   traySettingsPreview,
   globalShortcut,
   onGlobalShortcutChange,
@@ -333,6 +343,27 @@ export function SettingsPage({
   );
 
   const [reloadingPlugins, setReloadingPlugins] = useState(false)
+  const [copyLogPathStatus, setCopyLogPathStatus] = useState<CopyLogPathStatus>("idle")
+
+  const copyLogPathLabel = copyLogPathStatus === "copying"
+    ? "Copying"
+    : copyLogPathStatus === "copied"
+      ? "Copied"
+      : copyLogPathStatus === "failed"
+        ? "Copy Failed"
+        : "Copy Log Path"
+
+  const handleCopyLogPath = async () => {
+    if (copyLogPathStatus === "copying") return
+    setCopyLogPathStatus("copying")
+    try {
+      await onCopyLogPath()
+      setCopyLogPathStatus("copied")
+    } catch {
+      setCopyLogPathStatus("failed")
+    }
+  }
+
   const handleReloadPlugins = async () => {
     if (reloadingPlugins) return
     setReloadingPlugins(true)
@@ -573,6 +604,51 @@ export function SettingsPage({
         globalShortcut={globalShortcut}
         onGlobalShortcutChange={onGlobalShortcutChange}
       />
+      <section>
+        <h3 className="text-lg font-semibold mb-0">Debug Level</h3>
+        <p className="text-sm text-muted-foreground mb-2">
+          How much detail goes into logs
+        </p>
+        <div className="bg-muted/50 rounded-lg p-1">
+          <div className="grid grid-cols-3 gap-1" role="group" aria-label="Debug tools">
+            <div className="contents" role="radiogroup" aria-label="Debug level">
+              {LOG_LEVEL_OPTIONS.map((option) => {
+                const isActive = option.value === logLevel;
+                return (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    variant={isActive ? "default" : "outline"}
+                    size="sm"
+                    className="min-w-0"
+                    onClick={() => onLogLevelChange(option.value)}
+                  >
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                "min-w-0 px-1 text-[11px] leading-tight whitespace-normal",
+                "border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800",
+                "dark:border-emerald-400/50 dark:text-emerald-300 dark:hover:bg-emerald-400/10",
+                copyLogPathStatus === "copied" && "bg-emerald-500/10",
+                copyLogPathStatus === "failed" && "border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              )}
+              disabled={copyLogPathStatus === "copying"}
+              onClick={handleCopyLogPath}
+            >
+              {copyLogPathLabel}
+            </Button>
+          </div>
+        </div>
+      </section>
       <section>
         <h3 className="text-lg font-semibold mb-0">Start on Login</h3>
         <p className="text-sm text-muted-foreground mb-2">

@@ -4,6 +4,7 @@ import {
   DEFAULT_DISPLAY_MODE,
   DEFAULT_GLOBAL_SHORTCUT,
   DEFAULT_HUB_AUTO_CHECK,
+  DEFAULT_LOG_LEVEL,
   DEFAULT_MENUBAR_ICON_STYLE,
   DEFAULT_MENUBAR_METRIC,
   DEFAULT_RESET_TIMER_DISPLAY_MODE,
@@ -14,6 +15,7 @@ import {
   type AutoUpdateIntervalMinutes,
   type DisplayMode,
   type GlobalShortcut,
+  type LogLevel,
   type MenubarIconStyle,
   type MenubarMetric,
   type ResetTimerDisplayMode,
@@ -29,6 +31,7 @@ type AppPreferencesStore = {
   timeFormatMode: TimeFormatMode
   globalShortcut: GlobalShortcut
   startOnLogin: boolean
+  logLevel: LogLevel
   menubarIconStyle: MenubarIconStyle
   menubarMetric: MenubarMetric
   hubAutoCheck: boolean
@@ -40,6 +43,7 @@ type AppPreferencesStore = {
   setTimeFormatMode: (value: TimeFormatMode) => void
   setGlobalShortcut: (value: GlobalShortcut) => void
   setStartOnLogin: (value: boolean) => void
+  setLogLevel: (value: LogLevel) => void
   setMenubarIconStyle: (value: MenubarIconStyle) => void
   setMenubarMetric: (value: MenubarMetric) => void
   setHubAutoCheck: (value: boolean) => void
@@ -55,6 +59,7 @@ const initialState = {
   timeFormatMode: DEFAULT_TIME_FORMAT_MODE,
   globalShortcut: DEFAULT_GLOBAL_SHORTCUT,
   startOnLogin: DEFAULT_START_ON_LOGIN,
+  logLevel: DEFAULT_LOG_LEVEL,
   menubarIconStyle: DEFAULT_MENUBAR_ICON_STYLE,
   menubarMetric: DEFAULT_MENUBAR_METRIC,
   hubAutoCheck: DEFAULT_HUB_AUTO_CHECK,
@@ -70,6 +75,7 @@ export const useAppPreferencesStore = create<AppPreferencesStore>((set) => ({
   setTimeFormatMode: (value) => set({ timeFormatMode: value }),
   setGlobalShortcut: (value) => set({ globalShortcut: value }),
   setStartOnLogin: (value) => set({ startOnLogin: value }),
+  setLogLevel: (value) => set({ logLevel: value }),
   setMenubarIconStyle: (value) => set({ menubarIconStyle: value }),
   setMenubarMetric: (value) => set({ menubarMetric: value }),
   setHubAutoCheck: (value) => set({ hubAutoCheck: value }),

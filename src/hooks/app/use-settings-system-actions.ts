@@ -1,13 +1,16 @@
 import { useCallback } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import {
+  copyLogPath,
   getEnabledPluginIds,
   saveAutoUpdateInterval,
   saveGlobalShortcut,
+  saveLogLevel,
   saveStartOnLogin,
   saveUnsafeAllowAllEnv,
   type AutoUpdateIntervalMinutes,
   type GlobalShortcut,
+  type LogLevel,
   type PluginSettings,
 } from "@/lib/settings"
 
@@ -17,6 +20,7 @@ type UseSettingsSystemActionsArgs = {
   setAutoUpdateNextAt: (value: number | null) => void
   setGlobalShortcut: (value: GlobalShortcut) => void
   setStartOnLogin: (value: boolean) => void
+  setLogLevel: (value: LogLevel) => void
   setUnsafeAllowAllEnv: (value: boolean) => void
   applyStartOnLogin: (value: boolean) => Promise<void>
   applyUnsafeAllowAllEnv: (value: boolean) => Promise<void>
@@ -28,6 +32,7 @@ export function useSettingsSystemActions({
   setAutoUpdateNextAt,
   setGlobalShortcut,
   setStartOnLogin,
+  setLogLevel,
   setUnsafeAllowAllEnv,
   applyStartOnLogin,
   applyUnsafeAllowAllEnv,
@@ -69,6 +74,22 @@ export function useSettingsSystemActions({
     })
   }, [applyStartOnLogin, setStartOnLogin])
 
+  const handleLogLevelChange = useCallback((value: LogLevel) => {
+    setLogLevel(value)
+    void saveLogLevel(value).catch((error) => {
+      console.error("Failed to save debug level:", error)
+    })
+  }, [setLogLevel])
+
+  const handleCopyLogPath = useCallback(async () => {
+    try {
+      await copyLogPath()
+    } catch (error) {
+      console.error("Failed to copy log path:", error)
+      throw error
+    }
+  }, [])
+
   const handleUnsafeAllowAllEnvChange = useCallback((value: boolean) => {
     setUnsafeAllowAllEnv(value)
     void saveUnsafeAllowAllEnv(value).catch((error) => {
@@ -83,6 +104,8 @@ export function useSettingsSystemActions({
     handleAutoUpdateIntervalChange,
     handleGlobalShortcutChange,
     handleStartOnLoginChange,
+    handleLogLevelChange,
+    handleCopyLogPath,
     handleUnsafeAllowAllEnvChange,
   }
 }

@@ -8,10 +8,13 @@ Use this when OpenUsage is not working and you need to share debug info.
 
 ## 1) Set log level to Debug
 
-1. In your macOS menu bar, find the OpenUsage icon.
-2. Right-click it (or hold `Control` and click).
-3. Open `Debug Level`.
+1. Open OpenUsage.
+2. Go to `Settings`.
+3. Find `Debug Level`.
 4. Select `Debug`.
+5. Optional: click `Copy Log Path` to copy the exact log file path.
+
+You can also use the menu bar icon's `Debug Level` menu if it works on your Mac.
 
 If OpenUsage does not open at all, skip this step and continue.
 
@@ -22,6 +25,8 @@ If OpenUsage does not open at all, skip this step and continue.
 3. Stop after 1-2 attempts (enough data, less noise).
 
 ## 3) Open the log folder in Finder
+
+If you used `Copy Log Path`, you can paste that copied path in Finder instead.
 
 1. Open Finder.
 2. Press `Shift` + `Command` + `G`.

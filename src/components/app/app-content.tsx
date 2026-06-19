@@ -13,6 +13,7 @@ import type {
   AutoUpdateIntervalMinutes,
   DisplayMode,
   GlobalShortcut,
+  LogLevel,
   MenubarIconStyle,
   MenubarMetric,
   ResetTimerDisplayMode,
@@ -38,6 +39,8 @@ export type AppContentActionProps = {
   onTimeFormatModeChange: (mode: TimeFormatMode) => void
   onMenubarIconStyleChange: (value: MenubarIconStyle) => void
   onMenubarMetricChange: (value: MenubarMetric) => void
+  onLogLevelChange: (value: LogLevel) => void
+  onCopyLogPath: () => Promise<void>
   traySettingsPreview: TraySettingsPreview
   onGlobalShortcutChange: (value: GlobalShortcut) => void
   onStartOnLoginChange: (value: boolean) => void
@@ -61,6 +64,8 @@ export function AppContent({
   onTimeFormatModeChange,
   onMenubarIconStyleChange,
   onMenubarMetricChange,
+  onLogLevelChange,
+  onCopyLogPath,
   traySettingsPreview,
   onGlobalShortcutChange,
   onStartOnLoginChange,
@@ -82,6 +87,7 @@ export function AppContent({
     globalShortcut,
     themeMode,
     startOnLogin,
+    logLevel,
     unsafeAllowAllEnv,
   } = useAppPreferencesStore(
     useShallow((state) => ({
@@ -94,6 +100,7 @@ export function AppContent({
       globalShortcut: state.globalShortcut,
       themeMode: state.themeMode,
       startOnLogin: state.startOnLogin,
+      logLevel: state.logLevel,
       unsafeAllowAllEnv: state.unsafeAllowAllEnv,
     }))
   )
@@ -139,6 +146,9 @@ export function AppContent({
         onMenubarIconStyleChange={onMenubarIconStyleChange}
         menubarMetric={menubarMetric}
         onMenubarMetricChange={onMenubarMetricChange}
+        logLevel={logLevel}
+        onLogLevelChange={onLogLevelChange}
+        onCopyLogPath={onCopyLogPath}
         traySettingsPreview={traySettingsPreview}
         globalShortcut={globalShortcut}
         onGlobalShortcutChange={onGlobalShortcutChange}

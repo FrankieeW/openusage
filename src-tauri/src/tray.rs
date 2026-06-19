@@ -4,7 +4,6 @@ use tauri::path::BaseDirectory;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_nspanel::ManagerExt;
-use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_store::StoreExt;
 
 #[cfg(target_os = "macos")]
@@ -14,39 +13,65 @@ use crate::log_path;
 use crate::panel::{get_or_init_panel, position_panel_at_tray_icon, show_panel};
 
 const LOG_LEVEL_STORE_KEY: &str = "logLevel";
+const DEFAULT_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Error;
 
-fn get_stored_log_level(app_handle: &AppHandle) -> log::LevelFilter {
-    let store = match app_handle.store("settings.json") {
-        Ok(s) => s,
-        Err(_) => return log::LevelFilter::Error,
-    };
-    let value = store.get(LOG_LEVEL_STORE_KEY);
-    let level_str = value.and_then(|v| v.as_str().map(|s| s.to_string()));
-    match level_str.as_deref() {
-        Some("error") => log::LevelFilter::Error,
-        Some("warn") => log::LevelFilter::Warn,
-        Some("info") => log::LevelFilter::Info,
-        Some("debug") => log::LevelFilter::Debug,
-        Some("trace") => log::LevelFilter::Trace,
-        _ => log::LevelFilter::Error, // Default: least verbose
+pub fn parse_log_level(value: &str) -> Option<log::LevelFilter> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "error" => Some(log::LevelFilter::Error),
+        "warn" => Some(log::LevelFilter::Warn),
+        "info" => Some(log::LevelFilter::Info),
+        "debug" => Some(log::LevelFilter::Debug),
+        "trace" => Some(log::LevelFilter::Trace),
+        _ => None,
     }
 }
 
-fn set_stored_log_level(app_handle: &AppHandle, level: log::LevelFilter) {
-    let level_str = match level {
+pub fn log_level_to_str(level: log::LevelFilter) -> &'static str {
+    match level {
         log::LevelFilter::Error => "error",
         log::LevelFilter::Warn => "warn",
         log::LevelFilter::Info => "info",
         log::LevelFilter::Debug => "debug",
         log::LevelFilter::Trace => "trace",
-        log::LevelFilter::Off => "off",
-    };
-    log::info!("Log level changing to {:?}", level);
-    if let Ok(store) = app_handle.store("settings.json") {
-        store.set(LOG_LEVEL_STORE_KEY, serde_json::json!(level_str));
-        let _ = store.save();
+        log::LevelFilter::Off => "error",
     }
+}
+
+pub fn get_stored_log_level(app_handle: &AppHandle) -> log::LevelFilter {
+    let store = match app_handle.store("settings.json") {
+        Ok(s) => s,
+        Err(error) => {
+            log::warn!("failed to open settings store for log level: {}", error);
+            return DEFAULT_LOG_LEVEL;
+        }
+    };
+    let value = store.get(LOG_LEVEL_STORE_KEY);
+    let level_str = value.and_then(|v| v.as_str().map(|s| s.to_string()));
+    level_str
+        .as_deref()
+        .and_then(parse_log_level)
+        .unwrap_or(DEFAULT_LOG_LEVEL)
+}
+
+pub fn get_stored_log_level_value(app_handle: &AppHandle) -> &'static str {
+    log_level_to_str(get_stored_log_level(app_handle))
+}
+
+pub fn set_stored_log_level(
+    app_handle: &AppHandle,
+    level: log::LevelFilter,
+) -> Result<(), String> {
+    let level_str = log_level_to_str(level);
+    log::info!("Log level changing to {:?}", level);
+    let store = app_handle
+        .store("settings.json")
+        .map_err(|error| format!("failed to open settings store: {}", error))?;
+    store.set(LOG_LEVEL_STORE_KEY, serde_json::json!(level_str));
+    store
+        .save()
+        .map_err(|error| format!("failed to save settings store: {}", error))?;
     log::set_max_level(level);
+    Ok(())
 }
 
 pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
@@ -157,10 +182,10 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
+    let context_menu = menu.clone();
     let tray = TrayIconBuilder::with_id("tray")
         .icon(icon)
         .tooltip("OpenUsage")
-        .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app_handle, event| {
             log::debug!("tray menu: {}", event.id.as_ref());
@@ -190,25 +215,21 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                         "log_trace" => log::LevelFilter::Trace,
                         _ => unreachable!(),
                     };
-                    set_stored_log_level(app_handle, selected_level);
+                    if let Err(error) = set_stored_log_level(app_handle, selected_level) {
+                        log::error!("tray menu: failed to set log level: {}", error);
+                        return;
+                    }
                     // Update all checkmarks - only the selected level should be checked
                     for (item, level) in &log_items {
                         let _ = item.set_checked(*level == selected_level);
                     }
                 }
-                "copy_log_path" => match log_path::for_app(app_handle) {
-                    Ok(path) => {
-                        if let Err(error) = app_handle
-                            .clipboard()
-                            .write_text(path.to_string_lossy().to_string())
-                        {
-                            log::error!("failed to copy log path to clipboard: {}", error);
-                        } else {
-                            log::info!("copied log path to clipboard");
-                        }
+                "copy_log_path" => match log_path::copy_to_clipboard(app_handle) {
+                    Ok(()) => {
+                        log::info!("copied log path to clipboard");
                     }
                     Err(error) => {
-                        log::error!("failed to resolve log path: {}", error);
+                        log::error!("failed to copy log path to clipboard: {}", error);
                     }
                 },
                 _ => {}
@@ -241,17 +262,13 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                     position_panel_at_tray_icon(app_handle, rect.position, rect.size);
                 }
                 MouseButton::Right => {
-                    // macOS 27 click-routing override (issue #573): with the
-                    // button's action cleared (Task 2), the OS no longer pops
-                    // the menu automatically on right-click. Drive the pop-up
-                    // ourselves by pulling the still-attached menu from the
-                    // status item and showing it via popUpStatusItemMenu:.
+                    if let Err(error) = tray.set_menu(Some(context_menu.clone())) {
+                        log::error!("tray right-click: failed to attach context menu: {}", error);
+                        return;
+                    }
                     #[cfg(target_os = "macos")]
                     {
                         let _ = tray.with_inner_tray_icon(|inner| {
-                            // with_inner_tray_icon runs the closure on the main thread
-                            // (see tauri 2.11.2 src/tray/mod.rs `run_item_main_thread!`),
-                            // so constructing a MainThreadMarker here is sound.
                             let mtm = objc2_foundation::MainThreadMarker::new()
                                 .expect("with_inner_tray_icon closure must run on the main thread");
                             let Some(status) = inner.ns_status_item() else {
@@ -264,29 +281,23 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                             let _: () = unsafe { msg_send![&button, popUpStatusItemMenu: &*menu] };
                         });
                     }
+                    if let Err(error) = tray.set_menu::<Menu<tauri::Wry>>(None) {
+                        log::error!("tray right-click: failed to detach context menu: {}", error);
+                    }
                 }
                 MouseButton::Middle => {}
             }
         })
         .build(app_handle)?;
 
-    // macOS 27 click-routing override (issue #573):
-    // In macOS 27 Beta 1, NSStatusItem.button now fires its target/action on
-    // left-click, bypassing the TaoTrayTarget subview's menu_on_left_click
-    // flag and opening the attached menu before our click handler runs.
-    // Fix: clear the button's target and action so performClick is a no-op
-    // and the subview's mouseUp: -> on_tray_icon_event path becomes the
-    // sole click router. The menu stays attached (so muda's event wiring
-    // and the existing on_menu_event continue to work), and we pull it back
-    // out via NSStatusItem.menu(mtm) in the right-click pop-up path.
-    //
-    // To be removed when tauri-apps/tray-icon lands an upstream fix.
-    // Removal criterion: with .show_menu_on_left_click(true) and a non-cleared
-    // NSButton target/action, left-click on macOS 27+ must no longer open
-    // the menu automatically. Track upstream progress in tauri-apps/tray-icon.
+    // macOS 27 click-routing override (issue #573): do not attach the menu to
+    // NSStatusItem. A directly attached menu can preempt left-click handling and
+    // open the context menu before the usage panel toggle sees the click. The
+    // right-click path attaches the menu only while showing it.
     #[cfg(target_os = "macos")]
     {
         let _ = tray.with_inner_tray_icon(|inner| {
+            inner.set_show_menu_on_right_click(false);
             let Some(status) = inner.ns_status_item() else {
                 return;
             };
@@ -301,8 +312,38 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                 button.setAction(None);
             }
         });
-        log::info!("Applied macOS 27 click-routing override");
+        log::info!("Applied macOS tray click-routing override");
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{log_level_to_str, parse_log_level};
+
+    #[test]
+    fn parses_supported_log_levels() {
+        assert_eq!(parse_log_level("error"), Some(log::LevelFilter::Error));
+        assert_eq!(parse_log_level("warn"), Some(log::LevelFilter::Warn));
+        assert_eq!(parse_log_level("info"), Some(log::LevelFilter::Info));
+        assert_eq!(parse_log_level("debug"), Some(log::LevelFilter::Debug));
+        assert_eq!(parse_log_level("trace"), Some(log::LevelFilter::Trace));
+    }
+
+    #[test]
+    fn rejects_unsupported_log_levels() {
+        assert_eq!(parse_log_level("off"), None);
+        assert_eq!(parse_log_level("verbose"), None);
+        assert_eq!(parse_log_level(""), None);
+    }
+
+    #[test]
+    fn serializes_runtime_log_levels() {
+        assert_eq!(log_level_to_str(log::LevelFilter::Error), "error");
+        assert_eq!(log_level_to_str(log::LevelFilter::Warn), "warn");
+        assert_eq!(log_level_to_str(log::LevelFilter::Info), "info");
+        assert_eq!(log_level_to_str(log::LevelFilter::Debug), "debug");
+        assert_eq!(log_level_to_str(log::LevelFilter::Trace), "trace");
+    }
 }
