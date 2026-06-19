@@ -148,24 +148,10 @@ function PluginCard({
         plugin.unmanaged && "border-dashed",
       )}
     >
-      <div className="flex items-center gap-2">
-        <span className="truncate text-sm font-medium">{plugin.name}</span>
-        {statusLabel && (
-          <span
-            className={cn(
-              "shrink-0 text-xs",
-              plugin.packageStatus === "updateAvailable" && "text-blue-600",
-              plugin.packageStatus === "sourceChanged" && "text-amber-600",
-              plugin.packageStatus === "installedNewerThanSource" &&
-                "text-violet-600",
-              (plugin.packageStatus === "samePackageFromOtherSource" ||
-                plugin.packageStatus === "differentPackageSamePluginId") &&
-                "text-muted-foreground",
-            )}
-          >
-            {statusLabel}
-          </span>
-        )}
+      <div className="min-w-0">
+        <span className="block truncate text-sm font-medium" title={plugin.name}>
+          {plugin.name}
+        </span>
       </div>
       {statusDescription && (
         <p className="text-xs text-muted-foreground">{statusDescription}</p>
@@ -177,6 +163,23 @@ function PluginCard({
         {updatedAtLabel && (
           <span className="text-xs text-muted-foreground">
             {updatedAtLabel}
+          </span>
+        )}
+        {statusLabel && (
+          <span
+            className={cn(
+              "min-w-0 max-w-full truncate text-xs",
+              plugin.packageStatus === "updateAvailable" && "text-blue-600",
+              plugin.packageStatus === "sourceChanged" && "text-amber-600",
+              plugin.packageStatus === "installedNewerThanSource" &&
+                "text-violet-600",
+              (plugin.packageStatus === "samePackageFromOtherSource" ||
+                plugin.packageStatus === "differentPackageSamePluginId") &&
+                "text-muted-foreground",
+            )}
+            title={statusLabel}
+          >
+            {statusLabel}
           </span>
         )}
         {primaryAction && (

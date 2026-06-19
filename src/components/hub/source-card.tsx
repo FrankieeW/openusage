@@ -59,21 +59,27 @@ export function SourceCard({ source, defaultExpanded = false }: SourceCardProps)
         <button
           type="button"
           onClick={toggle}
-          className="flex w-full items-center gap-2 text-left"
+          className="flex w-full flex-col gap-1 text-left sm:flex-row sm:items-center sm:gap-2"
           data-testid="hub-source-toggle"
         >
-          <span className="truncate text-sm font-medium">{source.label}</span>
-          <Badge variant="secondary" className="text-[10px]">
-            {labelForSourceKind(source.kind)}
-          </Badge>
-          <Badge variant="outline" className="text-[10px]">
-            {labelForSourceTrust(source)}
-          </Badge>
-          {view && (
-            <span className="text-xs text-muted-foreground">
-              ({view.available.length})
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="truncate text-sm font-medium" title={source.label}>
+              {source.label}
             </span>
-          )}
+            {view && (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                ({view.available.length})
+              </span>
+            )}
+          </span>
+          <span className="flex shrink-0 flex-wrap gap-1">
+            <Badge variant="secondary" className="text-[10px]">
+              {labelForSourceKind(source.kind)}
+            </Badge>
+            <Badge variant="outline" className="text-[10px]">
+              {labelForSourceTrust(source)}
+            </Badge>
+          </span>
         </button>
         <div className="flex items-center gap-1">
           <Button

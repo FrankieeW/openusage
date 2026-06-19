@@ -257,6 +257,45 @@ describe("HubPage", () => {
     })
   })
 
+  it("keeps long plugin names separate from status copy", async () => {
+    const pluginName = "Claude Provider With A Very Long Display Name"
+    const status = "Different Package, Same Plugin ID"
+    useHubStore.setState({
+      sources: [sampleSource("s1")],
+      browseBySource: {
+        s1: sampleBrowse("s1", {
+          packageStatus: "differentPackageSamePluginId",
+          plugin: {
+            name: pluginName,
+            installedSourceId: "s2",
+            installedVersion: "0.6.26",
+          },
+        }),
+      },
+    })
+    render(<HubPage />)
+    fireEvent.click(await screen.findByTestId("hub-source-toggle"))
+
+    const name = await screen.findByText(pluginName)
+    expect(name.parentElement).not.toHaveTextContent(status)
+    expect(screen.getByText(status)).toBeInTheDocument()
+  })
+
+  it("keeps long source names separate from source badges", async () => {
+    const sourceName = "A Very Long Plugin Source Name"
+    useHubStore.setState({
+      sources: [sampleSource("s1", { label: sourceName })],
+      browseBySource: {},
+    })
+    render(<HubPage />)
+
+    const name = await screen.findByText(sourceName)
+    expect(name.parentElement).not.toHaveTextContent("GitHub")
+    expect(name.parentElement).not.toHaveTextContent("Community")
+    expect(screen.getByText("GitHub")).toBeInTheDocument()
+    expect(screen.getByText("Community")).toBeInTheDocument()
+  })
+
   it("installed newer than source does not offer downgrade by default", async () => {
     useHubStore.setState({
       sources: [sampleSource("s1")],
