@@ -659,33 +659,32 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
 /// Build the JS-facing PluginMeta list from the loaded Rust plugins.
 /// Shared by `list_plugins` and `hub::reload_plugins_and_emit` so hot-reload
 /// stays byte-identical to the initial probe.
-/// Walk plugins/ and return source_label for each installed plugin dir
-/// whose .openusage-install.json metadata has a non-empty source_label.
-fn read_source_label_map(plugins_dir: &std::path::Path) -> std::collections::HashMap<String, String> {
+/// Walk plugins/ once and return the install metadata for each installed
+/// plugin, keyed by plugin id. Building this map a single time avoids the
+/// O(N²) directory scans that result from looking metadata up per plugin.
+fn read_install_metadata_map(
+    plugins_dir: &std::path::Path,
+) -> std::collections::HashMap<String, hub::install::InstallMetadata> {
     let mut map = std::collections::HashMap::new();
     let Ok(entries) = std::fs::read_dir(plugins_dir) else { return map };
     for entry in entries.flatten() {
         let dir_name = entry.file_name().to_string_lossy().to_string();
         if let Some(meta) = hub::install::read_install_metadata(plugins_dir, &dir_name) {
-            if !meta.source_label.is_empty() {
-                map.insert(meta.plugin_id, meta.source_label);
-            }
+            map.insert(meta.plugin_id.clone(), meta);
         }
     }
     map
-}
-
-fn read_source_label(plugins_dir: &std::path::Path, plugin_id: &str) -> Option<String> {
-    read_source_label_map(plugins_dir).remove(plugin_id)
 }
 
 pub fn plugins_to_meta(
     plugins: &[plugin_engine::manifest::LoadedPlugin],
     plugins_dir: &std::path::Path,
 ) -> Vec<PluginMeta> {
+    let install_metadata = read_install_metadata_map(plugins_dir);
     plugins
         .iter()
         .map(|plugin| {
+            let metadata = install_metadata.get(&plugin.manifest.id);
             // Extract primary candidates: progress lines with primary_order, sorted by order
             let mut candidates: Vec<_> = plugin
                 .manifest
@@ -728,9 +727,10 @@ pub fn plugins_to_meta(
                     .collect(),
                 primary_candidates,
                 weekly_candidate,
-                source_label: read_source_label(plugins_dir, &plugin.manifest.id),
-                version: hub::install::read_install_metadata(plugins_dir, &plugin.manifest.id)
-                    .map(|m| m.installed_version),
+                source_label: metadata
+                    .filter(|m| !m.source_label.is_empty())
+                    .map(|m| m.source_label.clone()),
+                version: metadata.map(|m| m.installed_version.clone()),
             }
         })
         .collect()
