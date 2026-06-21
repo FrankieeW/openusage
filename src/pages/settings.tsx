@@ -610,8 +610,8 @@ export function SettingsPage({
           How much detail goes into logs
         </p>
         <div className="bg-muted/50 rounded-lg p-1">
-          <div className="grid grid-cols-3 gap-1" role="group" aria-label="Debug tools">
-            <div className="contents" role="radiogroup" aria-label="Debug level">
+          <div className="space-y-1" role="group" aria-label="Debug tools">
+            <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label="Debug level">
               {LOG_LEVEL_OPTIONS.map((option) => {
                 const isActive = option.value === logLevel;
                 return (
@@ -635,7 +635,7 @@ export function SettingsPage({
               variant="outline"
               size="sm"
               className={cn(
-                "min-w-0 px-1 text-[11px] leading-tight whitespace-normal",
+                "w-full min-w-0 px-1 text-[11px] leading-tight whitespace-normal",
                 "border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800",
                 "dark:border-emerald-400/50 dark:text-emerald-300 dark:hover:bg-emerald-400/10",
                 copyLogPathStatus === "copied" && "bg-emerald-500/10",

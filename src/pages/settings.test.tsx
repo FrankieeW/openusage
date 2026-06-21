@@ -178,9 +178,10 @@ describe("SettingsPage", () => {
   it("uses a compact wrapped layout for debug level options", () => {
     render(<SettingsPage {...defaultProps} />)
     const debugTools = screen.getByRole("group", { name: "Debug tools" })
-    expect(debugTools).toHaveClass("grid")
-    expect(debugTools).toHaveClass("grid-cols-3")
-    expect(within(debugTools).getAllByRole("radio")).toHaveLength(5)
+    const debugLevels = within(debugTools).getByRole("radiogroup", { name: "Debug level" })
+    expect(debugLevels).toHaveClass("grid")
+    expect(debugLevels).toHaveClass("grid-cols-3")
+    expect(within(debugLevels).getAllByRole("radio")).toHaveLength(5)
     expect(within(debugTools).getByRole("button", { name: "Copy Log Path" })).toBeInTheDocument()
   })
 
