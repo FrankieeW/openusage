@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow"
 import { AppShell } from "@/components/app/app-shell"
 import { useAppPluginViews } from "@/hooks/app/use-app-plugin-views"
 import { useProbe } from "@/hooks/app/use-probe"
+import { useLogLevelSync } from "@/hooks/app/use-log-level-sync"
 import { useSettingsBootstrap } from "@/hooks/app/use-settings-bootstrap"
 import { useSettingsDisplayActions } from "@/hooks/app/use-settings-display-actions"
 import { useSettingsPluginActions } from "@/hooks/app/use-settings-plugin-actions"
@@ -140,6 +141,7 @@ function App() {
   })
 
   useSettingsTheme(themeMode)
+  useLogLevelSync({ setLogLevel })
 
   const {
     handleThemeModeChange,

@@ -70,6 +70,8 @@ pub fn log_level_to_str(level: log::LevelFilter) -> &'static str {
         log::LevelFilter::Info => "info",
         log::LevelFilter::Debug => "debug",
         log::LevelFilter::Trace => "trace",
+        // `Off` is never persisted or exposed (the default is Error and
+        // `parse_log_level` never yields Off); map it to "error" defensively.
         log::LevelFilter::Off => "error",
     }
 }
@@ -276,6 +278,11 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                     };
                     if let Err(error) = save_log_level(app_handle, selected_level) {
                         log::error!("tray menu: failed to set log level: {}", error);
+                    } else {
+                        // Notify the frontend so the Settings page reflects the
+                        // change made from the tray menu.
+                        let _ = app_handle
+                            .emit("tray:log-level", log_level_to_str(selected_level));
                     }
                 }
                 "copy_log_path" => match log_path::copy_to_clipboard(app_handle) {

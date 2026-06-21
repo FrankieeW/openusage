@@ -327,10 +327,13 @@ export async function saveMenubarMetric(metric: MenubarMetric): Promise<void> {
   await store.save();
 }
 
-function isLogLevel(value: unknown): value is LogLevel {
+export function isLogLevel(value: unknown): value is LogLevel {
   return typeof value === "string" && LOG_LEVELS.includes(value as LogLevel);
 }
 
+// Intentionally routed through the backend (not read from the store directly
+// like other settings): the Rust command also drives `log::set_max_level`, so
+// the backend is the source of truth for the active log level.
 export async function loadLogLevel(): Promise<LogLevel> {
   if (!isTauri()) return DEFAULT_LOG_LEVEL;
   const stored = await invoke<unknown>("load_log_level");
