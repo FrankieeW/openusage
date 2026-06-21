@@ -12,6 +12,7 @@ const {
   loadAutoUpdateIntervalMock,
   loadDisplayModeMock,
   loadGlobalShortcutMock,
+  loadLogLevelMock,
   loadMenubarIconStyleMock,
   loadMenubarMetricMock,
   loadPluginSettingsMock,
@@ -35,6 +36,7 @@ const {
   loadAutoUpdateIntervalMock: vi.fn(),
   loadDisplayModeMock: vi.fn(),
   loadGlobalShortcutMock: vi.fn(),
+  loadLogLevelMock: vi.fn(),
   loadMenubarIconStyleMock: vi.fn(),
   loadMenubarMetricMock: vi.fn(),
   loadPluginSettingsMock: vi.fn(),
@@ -65,6 +67,7 @@ vi.mock("@/lib/settings", () => ({
   DEFAULT_AUTO_UPDATE_INTERVAL: 15,
   DEFAULT_DISPLAY_MODE: "left",
   DEFAULT_GLOBAL_SHORTCUT: null,
+  DEFAULT_LOG_LEVEL: "error",
   DEFAULT_MENUBAR_ICON_STYLE: "provider",
   DEFAULT_MENUBAR_METRIC: "default",
   DEFAULT_RESET_TIMER_DISPLAY_MODE: "relative",
@@ -75,6 +78,7 @@ vi.mock("@/lib/settings", () => ({
   loadAutoUpdateInterval: loadAutoUpdateIntervalMock,
   loadDisplayMode: loadDisplayModeMock,
   loadGlobalShortcut: loadGlobalShortcutMock,
+  loadLogLevel: loadLogLevelMock,
   loadMenubarIconStyle: loadMenubarIconStyleMock,
   loadMenubarMetric: loadMenubarMetricMock,
   loadPluginSettings: loadPluginSettingsMock,
@@ -102,6 +106,7 @@ function createArgs() {
     setTimeFormatMode: vi.fn(),
     setGlobalShortcut: vi.fn(),
     setStartOnLogin: vi.fn(),
+    setLogLevel: vi.fn(),
     setUnsafeAllowAllEnv: vi.fn(),
     setMenubarIconStyle: vi.fn(),
     setMenubarMetric: vi.fn(),
@@ -123,6 +128,7 @@ describe("useSettingsBootstrap", () => {
     loadAutoUpdateIntervalMock.mockReset()
     loadDisplayModeMock.mockReset()
     loadGlobalShortcutMock.mockReset()
+    loadLogLevelMock.mockReset()
     loadMenubarIconStyleMock.mockReset()
     loadMenubarMetricMock.mockReset()
     loadPluginSettingsMock.mockReset()
@@ -157,6 +163,7 @@ describe("useSettingsBootstrap", () => {
     loadResetTimerDisplayModeMock.mockResolvedValue("relative")
     loadTimeFormatModeMock.mockResolvedValue("auto")
     loadGlobalShortcutMock.mockResolvedValue("CommandOrControl+Shift+O")
+    loadLogLevelMock.mockResolvedValue("debug")
     loadMenubarIconStyleMock.mockResolvedValue("provider")
     loadMenubarMetricMock.mockResolvedValue("default")
     loadUnsafeAllowAllEnvMock.mockResolvedValue(false)
@@ -205,6 +212,33 @@ describe("useSettingsBootstrap", () => {
     await waitFor(() => {
       expect(args.setMenubarMetric).toHaveBeenCalledWith("weekly")
     })
+  })
+
+  it("applies the stored debug level", async () => {
+    loadLogLevelMock.mockResolvedValueOnce("trace")
+    const args = createArgs()
+
+    renderHook(() => useSettingsBootstrap(args))
+
+    await waitFor(() => {
+      expect(args.setLogLevel).toHaveBeenCalledWith("trace")
+    })
+  })
+
+  it("falls back to default debug level when loading fails", async () => {
+    const logLevelError = new Error("debug level unavailable")
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    loadLogLevelMock.mockRejectedValueOnce(logLevelError)
+    const args = createArgs()
+
+    renderHook(() => useSettingsBootstrap(args))
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith("Failed to load debug level:", logLevelError)
+      expect(args.setLogLevel).toHaveBeenCalledWith("error")
+    })
+
+    errorSpy.mockRestore()
   })
 
   it("falls back to default menubar metric when loading fails", async () => {

@@ -1,4 +1,5 @@
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { PluginMeta } from "@/lib/plugin-types";
 
 // Refresh cooldown duration in milliseconds (5 minutes)
@@ -24,6 +25,8 @@ export type MenubarIconStyle = "provider" | "bars" | "donut";
 
 export type MenubarMetric = "default" | "weekly";
 
+export type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+
 export type GlobalShortcut = string | null;
 
 export const SETTINGS_STORE_PATH = "settings.json";
@@ -48,6 +51,7 @@ export const DEFAULT_RESET_TIMER_DISPLAY_MODE: ResetTimerDisplayMode = "relative
 export const DEFAULT_TIME_FORMAT_MODE: TimeFormatMode = "auto";
 export const DEFAULT_MENUBAR_ICON_STYLE: MenubarIconStyle = "provider";
 export const DEFAULT_MENUBAR_METRIC: MenubarMetric = "default";
+export const DEFAULT_LOG_LEVEL: LogLevel = "error";
 export const DEFAULT_GLOBAL_SHORTCUT: GlobalShortcut = null;
 export const DEFAULT_START_ON_LOGIN = false;
 export const DEFAULT_HUB_AUTO_CHECK = false;
@@ -60,6 +64,7 @@ const RESET_TIMER_DISPLAY_MODES: ResetTimerDisplayMode[] = ["relative", "absolut
 const TIME_FORMAT_MODES: TimeFormatMode[] = ["auto", "12h", "24h"];
 const MENUBAR_ICON_STYLES: MenubarIconStyle[] = ["provider", "donut", "bars"];
 const MENUBAR_METRICS: MenubarMetric[] = ["default", "weekly"];
+const LOG_LEVELS: LogLevel[] = ["error", "warn", "info", "debug", "trace"];
 
 export const MENUBAR_ICON_STYLE_OPTIONS: { value: MenubarIconStyle; label: string }[] = [
   { value: "provider", label: "Plugin" },
@@ -70,6 +75,14 @@ export const MENUBAR_ICON_STYLE_OPTIONS: { value: MenubarIconStyle; label: strin
 export const MENUBAR_METRIC_OPTIONS: { value: MenubarMetric; label: string }[] = [
   { value: "default", label: "Default" },
   { value: "weekly", label: "Weekly" },
+];
+
+export const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
+  { value: "error", label: "Error" },
+  { value: "warn", label: "Warn" },
+  { value: "info", label: "Info" },
+  { value: "debug", label: "Debug" },
+  { value: "trace", label: "Trace" },
 ];
 
 export const AUTO_UPDATE_OPTIONS: { value: AutoUpdateIntervalMinutes; label: string }[] =
@@ -312,6 +325,27 @@ export async function loadMenubarMetric(): Promise<MenubarMetric> {
 export async function saveMenubarMetric(metric: MenubarMetric): Promise<void> {
   await store.set(MENUBAR_METRIC_KEY, metric);
   await store.save();
+}
+
+function isLogLevel(value: unknown): value is LogLevel {
+  return typeof value === "string" && LOG_LEVELS.includes(value as LogLevel);
+}
+
+export async function loadLogLevel(): Promise<LogLevel> {
+  if (!isTauri()) return DEFAULT_LOG_LEVEL;
+  const stored = await invoke<unknown>("load_log_level");
+  if (isLogLevel(stored)) return stored;
+  return DEFAULT_LOG_LEVEL;
+}
+
+export async function saveLogLevel(level: LogLevel): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("save_log_level", { level });
+}
+
+export async function copyLogPath(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("copy_log_path");
 }
 
 type LegacyStoreWithDelete = {

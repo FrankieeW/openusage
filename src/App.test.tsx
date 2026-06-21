@@ -25,6 +25,9 @@ const state = vi.hoisted(() => ({
   saveMenubarIconStyleMock: vi.fn(),
   loadMenubarMetricMock: vi.fn(),
   saveMenubarMetricMock: vi.fn(),
+  loadLogLevelMock: vi.fn(),
+  saveLogLevelMock: vi.fn(),
+  copyLogPathMock: vi.fn(),
   migrateLegacyTraySettingsMock: vi.fn(),
   loadGlobalShortcutMock: vi.fn(),
   saveGlobalShortcutMock: vi.fn(),
@@ -239,6 +242,9 @@ vi.mock("@/lib/settings", async () => {
     saveMenubarIconStyle: state.saveMenubarIconStyleMock,
     loadMenubarMetric: state.loadMenubarMetricMock,
     saveMenubarMetric: state.saveMenubarMetricMock,
+    loadLogLevel: state.loadLogLevelMock,
+    saveLogLevel: state.saveLogLevelMock,
+    copyLogPath: state.copyLogPathMock,
     migrateLegacyTraySettings: state.migrateLegacyTraySettingsMock,
     loadGlobalShortcut: state.loadGlobalShortcutMock,
     saveGlobalShortcut: state.saveGlobalShortcutMock,
@@ -283,6 +289,9 @@ describe("App", () => {
     state.saveMenubarIconStyleMock.mockReset()
     state.loadMenubarMetricMock.mockReset()
     state.saveMenubarMetricMock.mockReset()
+    state.loadLogLevelMock.mockReset()
+    state.saveLogLevelMock.mockReset()
+    state.copyLogPathMock.mockReset()
     state.migrateLegacyTraySettingsMock.mockReset()
     state.loadGlobalShortcutMock.mockReset()
     state.saveGlobalShortcutMock.mockReset()
@@ -327,6 +336,9 @@ describe("App", () => {
     state.saveMenubarIconStyleMock.mockResolvedValue(undefined)
     state.loadMenubarMetricMock.mockResolvedValue("default")
     state.saveMenubarMetricMock.mockResolvedValue(undefined)
+    state.loadLogLevelMock.mockResolvedValue("error")
+    state.saveLogLevelMock.mockResolvedValue(undefined)
+    state.copyLogPathMock.mockResolvedValue(undefined)
     state.migrateLegacyTraySettingsMock.mockResolvedValue(undefined)
     state.loadGlobalShortcutMock.mockResolvedValue(null)
     state.saveGlobalShortcutMock.mockResolvedValue(undefined)
@@ -700,6 +712,26 @@ describe("App", () => {
 
     await userEvent.click(await screen.findByRole("radio", { name: "Used" }))
     expect(state.saveDisplayModeMock).toHaveBeenCalledWith("used")
+  })
+
+  it("settings UI persists debug level change", async () => {
+    render(<App />)
+    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
+    await userEvent.click(settingsButtons[0])
+
+    expect(screen.getByText("Debug Level")).toBeVisible()
+    await userEvent.click(await screen.findByRole("radio", { name: "Debug" }))
+    expect(state.saveLogLevelMock).toHaveBeenCalledWith("debug")
+  })
+
+  it("settings UI copies the log path", async () => {
+    render(<App />)
+    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
+    await userEvent.click(settingsButtons[0])
+
+    await userEvent.click(await screen.findByRole("button", { name: "Copy Log Path" }))
+    expect(state.copyLogPathMock).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeVisible()
   })
 
   it("settings UI persists menubar icon style change", async () => {

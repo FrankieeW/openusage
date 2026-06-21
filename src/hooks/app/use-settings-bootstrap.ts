@@ -13,6 +13,7 @@ import {
   DEFAULT_GLOBAL_SHORTCUT,
   DEFAULT_MENUBAR_ICON_STYLE,
   DEFAULT_MENUBAR_METRIC,
+  DEFAULT_LOG_LEVEL,
   DEFAULT_RESET_TIMER_DISPLAY_MODE,
   DEFAULT_START_ON_LOGIN,
   DEFAULT_THEME_MODE,
@@ -21,6 +22,7 @@ import {
   loadAutoUpdateInterval,
   loadDisplayMode,
   loadGlobalShortcut,
+  loadLogLevel,
   loadMenubarIconStyle,
   loadMenubarMetric,
   migrateLegacyTraySettings,
@@ -36,6 +38,7 @@ import {
   type AutoUpdateIntervalMinutes,
   type DisplayMode,
   type GlobalShortcut,
+  type LogLevel,
   type MenubarIconStyle,
   type MenubarMetric,
   type PluginSettings,
@@ -54,6 +57,7 @@ type UseSettingsBootstrapArgs = {
   setTimeFormatMode: (value: TimeFormatMode) => void
   setGlobalShortcut: (value: GlobalShortcut) => void
   setStartOnLogin: (value: boolean) => void
+  setLogLevel: (value: LogLevel) => void
   setUnsafeAllowAllEnv: (value: boolean) => void
   setMenubarIconStyle: (value: MenubarIconStyle) => void
   setMenubarMetric: (value: MenubarMetric) => void
@@ -72,6 +76,7 @@ export function useSettingsBootstrap({
   setTimeFormatMode,
   setGlobalShortcut,
   setStartOnLogin,
+  setLogLevel,
   setUnsafeAllowAllEnv,
   setMenubarIconStyle,
   setMenubarMetric,
@@ -162,6 +167,13 @@ export function useSettingsBootstrap({
           console.error("Failed to load start on login:", error)
         }
 
+        let storedLogLevel = DEFAULT_LOG_LEVEL
+        try {
+          storedLogLevel = await loadLogLevel()
+        } catch (error) {
+          console.error("Failed to load debug level:", error)
+        }
+
         try {
           await applyStartOnLogin(storedStartOnLogin)
         } catch (error) {
@@ -209,6 +221,7 @@ export function useSettingsBootstrap({
           setTimeFormatMode(storedTimeFormatMode)
           setGlobalShortcut(storedGlobalShortcut)
           setStartOnLogin(storedStartOnLogin)
+          setLogLevel(storedLogLevel)
           setUnsafeAllowAllEnv(storedUnsafeAllowAllEnv)
           setMenubarIconStyle(storedMenubarIconStyle)
           setMenubarMetric(storedMenubarMetric)
@@ -240,6 +253,7 @@ export function useSettingsBootstrap({
     setDisplayMode,
     setErrorForPlugins,
     setGlobalShortcut,
+    setLogLevel,
     setLoadingForPlugins,
     setMenubarIconStyle,
     setMenubarMetric,

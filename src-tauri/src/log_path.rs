@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use tauri::Manager;
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 pub fn for_app(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     let package_name = app_handle.package_info().name.clone();
@@ -8,6 +9,14 @@ pub fn for_app(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
         .path()
         .app_log_dir()
         .map(|dir| log_file_path(&dir, &package_name))
+        .map_err(|error| error.to_string())
+}
+
+pub fn copy_to_clipboard(app_handle: &tauri::AppHandle) -> Result<(), String> {
+    let path = for_app(app_handle)?;
+    app_handle
+        .clipboard()
+        .write_text(path.to_string_lossy().to_string())
         .map_err(|error| error.to_string())
 }
 
