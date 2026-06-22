@@ -659,32 +659,26 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
 /// Build the JS-facing PluginMeta list from the loaded Rust plugins.
 /// Shared by `list_plugins` and `hub::reload_plugins_and_emit` so hot-reload
 /// stays byte-identical to the initial probe.
-/// Walk plugins/ once and return the install metadata for each installed
-/// plugin, keyed by plugin id. Building this map a single time avoids the
-/// O(N²) directory scans that result from looking metadata up per plugin.
-fn read_install_metadata_map(
+/// Read install metadata from the plugin directory that was actually loaded.
+/// This preserves source-scoped install dirs while avoiding unrelated or
+/// transient metadata that may exist elsewhere under plugins/.
+fn read_install_metadata_for_plugin(
     plugins_dir: &std::path::Path,
-) -> std::collections::HashMap<String, hub::install::InstallMetadata> {
-    let mut map = std::collections::HashMap::new();
-    let Ok(entries) = std::fs::read_dir(plugins_dir) else { return map };
-    for entry in entries.flatten() {
-        let dir_name = entry.file_name().to_string_lossy().to_string();
-        if let Some(meta) = hub::install::read_install_metadata(plugins_dir, &dir_name) {
-            map.insert(meta.plugin_id.clone(), meta);
-        }
-    }
-    map
+    plugin: &plugin_engine::manifest::LoadedPlugin,
+) -> Option<hub::install::InstallMetadata> {
+    let dir_name = plugin.plugin_dir.file_name()?.to_str()?;
+    hub::install::read_install_metadata(plugins_dir, dir_name)
+        .filter(|metadata| metadata.plugin_id == plugin.manifest.id)
 }
 
 pub fn plugins_to_meta(
     plugins: &[plugin_engine::manifest::LoadedPlugin],
     plugins_dir: &std::path::Path,
 ) -> Vec<PluginMeta> {
-    let install_metadata = read_install_metadata_map(plugins_dir);
     plugins
         .iter()
         .map(|plugin| {
-            let metadata = install_metadata.get(&plugin.manifest.id);
+            let metadata = read_install_metadata_for_plugin(plugins_dir, plugin);
             // Extract primary candidates: progress lines with primary_order, sorted by order
             let mut candidates: Vec<_> = plugin
                 .manifest
@@ -728,9 +722,10 @@ pub fn plugins_to_meta(
                 primary_candidates,
                 weekly_candidate,
                 source_label: metadata
+                    .as_ref()
                     .filter(|m| !m.source_label.is_empty())
                     .map(|m| m.source_label.clone()),
-                version: metadata.map(|m| m.installed_version.clone()),
+                version: metadata.map(|m| m.installed_version),
             }
         })
         .collect()
@@ -914,9 +909,12 @@ pub fn run() {
 mod tests {
     use super::{
         DAILY_ACTIVE_TRACKED_DAY_KEY, EnvGroupDto, EnvGroupOverrideDto, MAX_CONCURRENT_PROBES,
-        flatten_env_groups, flatten_legacy_env_groups, probe_worker_count, seconds_until_next_utc_day,
-        should_track_daily_active,
+        flatten_env_groups, flatten_legacy_env_groups, plugins_to_meta, probe_worker_count,
+        seconds_until_next_utc_day, should_track_daily_active,
     };
+    use crate::hub::install::{INSTALL_METADATA_SCHEMA_VERSION, InstallMetadata};
+    use crate::plugin_engine::manifest::{LoadedPlugin, PluginManifest};
+    use std::path::{Path, PathBuf};
     use time::{Date, Month, PrimitiveDateTime, Time};
 
     #[test]
@@ -967,6 +965,39 @@ mod tests {
     }
 
     #[test]
+    fn plugins_to_meta_uses_loaded_plugin_dir_for_install_metadata() {
+        let plugins_dir = tempdir("plugins-to-meta-metadata-source");
+        let loaded_dir = plugins_dir.join("claude__source-a");
+        std::fs::create_dir_all(&loaded_dir).unwrap();
+        crate::hub::install::write_install_metadata(
+            &plugins_dir,
+            "orphan-metadata",
+            &install_metadata("claude", "Orphan Source", "9.9.9"),
+        )
+        .unwrap();
+
+        let plugin = loaded_plugin("claude", loaded_dir);
+        let meta = plugins_to_meta(&[plugin], &plugins_dir);
+
+        assert_eq!(meta.len(), 1);
+        assert_eq!(meta[0].source_label, None);
+        assert_eq!(meta[0].version, None);
+
+        crate::hub::install::write_install_metadata(
+            &plugins_dir,
+            "claude__source-a",
+            &install_metadata("claude", "Loaded Source", "1.2.3"),
+        )
+        .unwrap();
+
+        let plugin = loaded_plugin("claude", plugins_dir.join("claude__source-a"));
+        let meta = plugins_to_meta(&[plugin], &plugins_dir);
+
+        assert_eq!(meta[0].source_label.as_deref(), Some("Loaded Source"));
+        assert_eq!(meta[0].version.as_deref(), Some("1.2.3"));
+    }
+
+    #[test]
     fn flatten_env_groups_uses_enabled_as_source_of_truth() {
         let groups = vec![
             EnvGroupDto {
@@ -1011,5 +1042,63 @@ mod tests {
 
         assert_eq!(flattened.len(), 1);
         assert_eq!(flattened[0].name, "OPENUSAGE_LEGACY");
+    }
+
+    fn loaded_plugin(id: &str, plugin_dir: PathBuf) -> LoadedPlugin {
+        LoadedPlugin {
+            manifest: PluginManifest {
+                schema_version: 1,
+                id: id.to_string(),
+                name: id.to_string(),
+                version: "1.0.0".to_string(),
+                entry: "plugin.js".to_string(),
+                icon: "icon.svg".to_string(),
+                brand_color: None,
+                lines: Vec::new(),
+                links: Vec::new(),
+            },
+            plugin_dir,
+            entry_script: String::new(),
+            icon_data_url: String::new(),
+        }
+    }
+
+    fn install_metadata(plugin_id: &str, source_label: &str, version: &str) -> InstallMetadata {
+        InstallMetadata {
+            schema_version: INSTALL_METADATA_SCHEMA_VERSION,
+            source_id: "source".to_string(),
+            source_url: "https://example.com/source.git".to_string(),
+            source_label: source_label.to_string(),
+            source_kind: None,
+            source_ref: None,
+            source_commit_sha: None,
+            plugin_id: plugin_id.to_string(),
+            installed_version: version.to_string(),
+            package_hash: "sha256:test".to_string(),
+            installed_at: 1,
+        }
+    }
+
+    fn tempdir(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "openusage-lib-{}-{}-{}",
+            label,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        if path.exists() {
+            remove_dir_all_best_effort(&path);
+        }
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn remove_dir_all_best_effort(path: &Path) {
+        if path.exists() {
+            let _ = std::fs::remove_dir_all(path);
+        }
     }
 }
