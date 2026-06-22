@@ -281,8 +281,11 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
                     } else {
                         // Notify the frontend so the Settings page reflects the
                         // change made from the tray menu.
-                        let _ = app_handle
-                            .emit("tray:log-level", log_level_to_str(selected_level));
+                        if let Err(error) =
+                            app_handle.emit("tray:log-level", log_level_to_str(selected_level))
+                        {
+                            log::error!("failed to emit tray log level update: {}", error);
+                        }
                     }
                 }
                 "copy_log_path" => match log_path::copy_to_clipboard(app_handle) {

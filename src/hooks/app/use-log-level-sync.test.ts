@@ -63,4 +63,20 @@ describe("useLogLevelSync", () => {
     unmount()
     expect(listeners.has("tray:log-level")).toBe(false)
   })
+
+  it("logs when tray log level subscription fails", async () => {
+    const error = new Error("listener unavailable")
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    listenMock.mockRejectedValueOnce(error)
+
+    renderHook(() => useLogLevelSync({ setLogLevel: vi.fn() }))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to subscribe to tray debug level changes:",
+      error
+    )
+    errorSpy.mockRestore()
+  })
 })

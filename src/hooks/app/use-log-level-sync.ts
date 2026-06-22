@@ -20,13 +20,17 @@ export function useLogLevelSync({ setLogLevel }: UseLogLevelSyncArgs) {
       if (isLogLevel(event.payload)) {
         setLogLevel(event.payload)
       }
-    }).then((fn) => {
-      if (cancelled) {
-        fn()
-        return
-      }
-      unlisten = fn
     })
+      .then((fn) => {
+        if (cancelled) {
+          fn()
+          return
+        }
+        unlisten = fn
+      })
+      .catch((error) => {
+        console.error("Failed to subscribe to tray debug level changes:", error)
+      })
 
     return () => {
       cancelled = true
