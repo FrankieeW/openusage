@@ -15,6 +15,7 @@ Use this when OpenUsage is not working and you need to share debug info.
 5. Optional: click `Copy Log Path` to copy the exact log file path.
 
 You can also use the menu bar icon's `Debug Level` menu if it works on your Mac.
+Changes made from the menu bar are also reflected in `Settings`.
 
 If OpenUsage does not open at all, skip this step and continue.
 
