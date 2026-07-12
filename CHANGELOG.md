@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.0.8
+
+### New Features
+- Add debug log controls ([#4](https://github.com/FrankieeW/openusage/pull/4)) by @FrankieeW
+
+### Bug Fixes
+- Keep tray debug controls and Settings state synchronized by @FrankieeW
+- Log debug synchronization failures by @FrankieeW
+- Trust loaded plugin directories for install metadata by @FrankieeW
+- Harden the local API, Hub refresh, runtime cleanup, and Settings behavior by @FrankieeW
+
+### Refactor
+- Read plugin install metadata once per refresh by @FrankieeW
+- Make debug-level radio groups accessibility-robust by @FrankieeW
+- Split oversized backend and frontend modules by @FrankieeW
+
+### Chores
+- Document tray debug synchronization by @FrankieeW
+
+---
+
+### Changelog
+
+**Full Changelog**: [v1.0.7...v1.0.8](https://github.com/FrankieeW/openusage/compare/v1.0.7...v1.0.8)
+
+- [27510b3](https://github.com/FrankieeW/openusage/commit/27510b36727fe0e25c18c4b7873616bb9c63bd19) feat(settings): add debug log controls by @FrankieeW
+- [f5b8b8e](https://github.com/FrankieeW/openusage/commit/f5b8b8e0ec4478ff554435d6db260ddd9e6c73d0) fix(tray): keep debug menu state synced by @FrankieeW
+- [fce3992](https://github.com/FrankieeW/openusage/commit/fce399232b3c3a95b4ea831bcf457832a774cd81) Merge pull request #4 from FrankieeW/codex/debug-log-settings by @FrankieeW
+- [98a306b](https://github.com/FrankieeW/openusage/commit/98a306bca2d6068c594c928084acebd308013187) perf(plugins): read install metadata once in plugins_to_meta by @FrankieeW
+- [79ee843](https://github.com/FrankieeW/openusage/commit/79ee84330b17c33a0b3a889d45b1e646ab833e34) fix(tray): sync debug level changes back to the settings page by @FrankieeW
+- [0a9dd02](https://github.com/FrankieeW/openusage/commit/0a9dd02ce76140a569769410f9c94d3ffdf605fe) refactor(settings): make debug level radiogroup accessibility-robust by @FrankieeW
+- [416fbe3](https://github.com/FrankieeW/openusage/commit/416fbe3a965745849a1092159dd347f0f8a1e642) fix(settings): log debug sync failures by @FrankieeW
+- [b2b6ee8](https://github.com/FrankieeW/openusage/commit/b2b6ee8f2852566d5bd519d0afe8fc9068e9bc1e) fix(plugins): trust loaded metadata dirs by @FrankieeW
+- [63828d9](https://github.com/FrankieeW/openusage/commit/63828d91210898c90cc717fd6f858a418e28a5fe) docs(logs): mention tray debug sync by @FrankieeW
+- [ded7c99](https://github.com/FrankieeW/openusage/commit/ded7c99a4353f88806e4b1f08ad3a312b12d1306) fix: address runtime and settings review findings by @FrankieeW
+
 ## v1.0.7
 
 ### New Features
