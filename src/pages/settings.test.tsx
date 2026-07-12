@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import type { ReactNode } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -135,6 +135,34 @@ describe("SettingsPage", () => {
       />
     )
     await userEvent.click(screen.getByText("30 min"))
+    expect(onAutoUpdateIntervalChange).toHaveBeenCalledWith(30)
+  })
+
+  it("keeps auto-update options shrinkable on narrow screens", () => {
+    render(<SettingsPage {...defaultProps} />)
+    const group = screen.getByRole("radiogroup", { name: "Auto-update interval" })
+
+    for (const option of within(group).getAllByRole("radio")) {
+      expect(option).toHaveClass("min-w-0")
+    }
+  })
+
+  it("uses roving focus and arrow keys in segmented radio groups", () => {
+    const onAutoUpdateIntervalChange = vi.fn()
+    render(
+      <SettingsPage
+        {...defaultProps}
+        onAutoUpdateIntervalChange={onAutoUpdateIntervalChange}
+      />
+    )
+    const group = screen.getByRole("radiogroup", { name: "Auto-update interval" })
+    const options = within(group).getAllByRole("radio")
+
+    expect(options.map((option) => option.tabIndex)).toEqual([-1, 0, -1, -1])
+    options[1].focus()
+    fireEvent.keyDown(options[1], { key: "ArrowRight" })
+
+    expect(options[2]).toHaveFocus()
     expect(onAutoUpdateIntervalChange).toHaveBeenCalledWith(30)
   })
 

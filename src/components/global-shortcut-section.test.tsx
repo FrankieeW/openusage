@@ -29,6 +29,21 @@ describe("GlobalShortcutSection", () => {
     expect(screen.getByText("Cmd + Opt + Delete")).toBeInTheDocument()
   })
 
+  it("shows the empty shortcut prompt once", () => {
+    renderSection()
+
+    expect(screen.getAllByText("Click to set")).toHaveLength(1)
+  })
+
+  it("renders recording and clearing as sibling buttons", () => {
+    renderSection("CommandOrControl+Shift+U")
+    const recordingButton = screen.getByRole("button", { name: "Cmd + Shift + U" })
+    const clearButton = screen.getByRole("button", { name: "Clear shortcut" })
+
+    expect(recordingButton.tagName).toBe("BUTTON")
+    expect(recordingButton).not.toContainElement(clearButton)
+  })
+
   it("records and saves CommandOrControl + Shift + key", async () => {
     const { onGlobalShortcutChange } = renderSection()
     const textbox = await startRecording()
@@ -127,17 +142,19 @@ describe("GlobalShortcutSection", () => {
     expect(screen.queryByRole("textbox", { name: /Press keys/i })).toBeNull()
   })
 
-  it("starts recording from keyboard activation keys", () => {
+  it("starts recording from keyboard activation keys", async () => {
     renderSection()
     const trigger = screen.getByRole("button", { name: /Click to set/i })
 
-    fireEvent.keyDown(trigger, { key: "Enter" })
+    trigger.focus()
+    await userEvent.keyboard("{Enter}")
     expect(screen.getByRole("textbox", { name: /Press keys/i })).toBeInTheDocument()
 
     fireEvent.blur(screen.getByRole("textbox", { name: /Press keys/i }))
     expect(screen.queryByRole("textbox", { name: /Press keys/i })).toBeNull()
 
-    fireEvent.keyDown(trigger, { key: " " })
+    screen.getByRole("button", { name: /Click to set/i }).focus()
+    await userEvent.keyboard(" ")
     expect(screen.getByRole("textbox", { name: /Press keys/i })).toBeInTheDocument()
   })
 

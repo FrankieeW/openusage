@@ -40,4 +40,10 @@ describe("parseGithubTreeUrl", () => {
     expect(parseGithubTreeUrl("foo/bar")).toBeNull()
     expect(parseGithubTreeUrl("/path/to/repo")).toBeNull()
   })
+
+  it("returns null when the branch has a malformed percent escape", () => {
+    expect(
+      parseGithubTreeUrl("https://github.com/foo/bar/tree/feature%ZZ"),
+    ).toBeNull()
+  })
 })

@@ -2,6 +2,8 @@
 
 OpenUsage exposes a read-only HTTP API on the loopback interface so other local apps can consume the same usage data shown in the menu bar.
 
+The API is intended for native local clients. Responses do not opt in to cross-origin browser access, so JavaScript served from another origin cannot read them.
+
 **Base URL:** `http://127.0.0.1:6736`
 
 The server starts automatically with the app. If the port is already in use, the feature is silently disabled for that session.
@@ -80,17 +82,11 @@ The `lines` array uses the same metric line types as the internal plugin output:
 - Only **successful** probe results are cached. A failed probe never overwrites a previous successful snapshot.
 - The single-provider endpoint (`/v1/usage/:providerId`) works for any known provider, including disabled ones.
 
-## CORS
+## Browser Access
 
-All responses include permissive CORS headers:
+Responses do not include `Access-Control-Allow-Origin` or other CORS opt-in headers. Browser scripts served from another origin cannot read the API by default. Native local HTTP clients are unaffected.
 
-```
-Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET, OPTIONS
-Access-Control-Allow-Headers: Content-Type
-```
-
-`OPTIONS` requests return **204 No Content** with these headers for preflight support.
+`OPTIONS` requests still return **204 No Content**, but without CORS headers.
 
 ## Error Responses
 

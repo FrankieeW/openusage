@@ -1,8 +1,8 @@
 use super::cache::{cache_state, enabled_snapshots_ordered};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 const BIND_ADDR: &str = "127.0.0.1:6736";
@@ -140,14 +140,15 @@ fn route(method: &str, path: &str) -> String {
         };
     }
 
-    if let Some(provider_id) = path.strip_prefix("/v1/usage/") {
-        if !provider_id.is_empty() && !provider_id.contains('/') {
-            return match method {
-                "GET" => handle_get_usage_single(provider_id),
-                "OPTIONS" => response_no_content(),
-                _ => response_method_not_allowed(),
-            };
-        }
+    if let Some(provider_id) = path.strip_prefix("/v1/usage/")
+        && !provider_id.is_empty()
+        && !provider_id.contains('/')
+    {
+        return match method {
+            "GET" => handle_get_usage_single(provider_id),
+            "OPTIONS" => response_no_content(),
+            _ => response_method_not_allowed(),
+        };
     }
 
     response_not_found("not_found")
@@ -184,27 +185,18 @@ fn handle_get_usage_single(provider_id: &str) -> String {
 // HTTP response builders
 // ---------------------------------------------------------------------------
 
-const CORS_HEADERS: &str = "\
-Access-Control-Allow-Origin: *\r\n\
-Access-Control-Allow-Methods: GET, OPTIONS\r\n\
-Access-Control-Allow-Headers: Content-Type";
-
 fn response_json(status: u16, reason: &str, body: &str) -> String {
     format!(
-        "HTTP/1.1 {} {}\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n{}\r\nContent-Length: {}\r\n\r\n{}",
+        "HTTP/1.1 {} {}\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\n\r\n{}",
         status,
         reason,
-        CORS_HEADERS,
         body.len(),
         body,
     )
 }
 
 fn response_no_content() -> String {
-    format!(
-        "HTTP/1.1 204 No Content\r\nConnection: close\r\n{}\r\n\r\n",
-        CORS_HEADERS,
-    )
+    "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".to_string()
 }
 
 fn response_not_found(error_code: &str) -> String {
@@ -224,7 +216,7 @@ fn response_service_unavailable() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::cache::{cache_state, CachedPluginSnapshot};
+    use super::super::cache::{CachedPluginSnapshot, cache_state};
     use super::*;
     use serial_test::serial;
 
@@ -245,6 +237,13 @@ mod tests {
     }
 
     #[test]
+    fn route_get_usage_omits_cross_origin_access_headers() {
+        let resp = route("GET", "/v1/usage");
+
+        assert!(!resp.contains("\r\nAccess-Control-Allow-Origin:"));
+    }
+
+    #[test]
     fn route_unknown_path_returns_404() {
         let resp = route("GET", "/v2/something");
         assert!(resp.starts_with("HTTP/1.1 404"));
@@ -257,10 +256,11 @@ mod tests {
     }
 
     #[test]
-    fn route_options_returns_204_with_cors() {
+    fn route_options_returns_204_without_cross_origin_access_headers() {
         let resp = route("OPTIONS", "/v1/usage");
+
         assert!(resp.starts_with("HTTP/1.1 204"));
-        assert!(resp.contains("Access-Control-Allow-Origin: *"));
+        assert!(!resp.contains("\r\nAccess-Control-Allow-Origin:"));
     }
 
     #[test]
@@ -310,13 +310,11 @@ mod tests {
     fn route_options_on_provider_returns_204() {
         let resp = route("OPTIONS", "/v1/usage/claude");
         assert!(resp.starts_with("HTTP/1.1 204"));
-        assert!(resp.contains("Access-Control-Allow-Methods: GET, OPTIONS"));
     }
 
     #[test]
-    fn response_json_includes_cors_headers() {
+    fn response_json_includes_json_content_type() {
         let resp = response_json(200, "OK", "[]");
-        assert!(resp.contains("Access-Control-Allow-Origin: *"));
         assert!(resp.contains("Content-Type: application/json; charset=utf-8"));
     }
 
@@ -345,6 +343,5 @@ mod tests {
 
         assert!(resp.starts_with("HTTP/1.1 503"));
         assert!(resp.contains(r#""error":"server_busy""#));
-        assert!(resp.contains("Access-Control-Allow-Origin: *"));
     }
 }

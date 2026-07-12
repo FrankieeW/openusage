@@ -1,3 +1,6 @@
+// tauri-nspanel's event macro grammar requires explicit unit return types.
+#![allow(clippy::unused_unit)]
+
 use tauri::{AppHandle, Manager, Position, Size};
 use tauri_nspanel::{
     CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt, tauri_panel,

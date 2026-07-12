@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { listen } from "@tauri-apps/api/event"
+import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
 import type { PluginMeta } from "@/lib/plugin-types"
 import { useAppPluginStore } from "@/stores/app-plugin-store"
@@ -311,12 +311,15 @@ export function uninstallLoadingKey(pluginId: string) {
 // ---------------------------------------------------------------------------
 
 let subscribed = false
+let unlistenHubEvents: UnlistenFn[] = []
 
 /**
  * Test-only reset hook. The `subscribed` flag is a module-local so it would
  * otherwise leak across vitest tests in the same file.
  */
 export function __resetHubSubscriptionsForTesting() {
+  unlistenHubEvents.forEach((unlisten) => unlisten())
+  unlistenHubEvents = []
   subscribed = false
 }
 
@@ -332,16 +335,18 @@ export function __resetHubSubscriptionsForTesting() {
 export async function initHubSubscriptions() {
   if (subscribed) return
   subscribed = true
+  const pendingUnlisteners: UnlistenFn[] = []
 
   try {
-    await listen<PluginMeta[]>("plugins-changed", (event) => {
+    const unlistenPluginsChanged = await listen<PluginMeta[]>("plugins-changed", (event) => {
       console.log("[hub] plugins-changed received:", event.payload.length, "plugins")
       // Update sidebar + settings page immediately, no restart needed
       useAppPluginStore.getState().setPluginsMeta(event.payload)
       // Refresh Hub source list too
       void useHubStore.getState().refreshSources()
     })
-    await listen<{
+    pendingUnlisteners.push(unlistenPluginsChanged)
+    const unlistenOrphansDetected = await listen<{
       orphanSourcePlugins: string[]
       unmanagedPlugins: string[]
     }>("hub-orphans-detected", (e) => {
@@ -359,8 +364,11 @@ export async function initHubSubscriptions() {
         })
       }
     })
+    pendingUnlisteners.push(unlistenOrphansDetected)
+    unlistenHubEvents = pendingUnlisteners
   } catch (err) {
-    // Not running inside Tauri (e.g. vitest in jsdom) — silently no-op
+    pendingUnlisteners.forEach((unlisten) => unlisten())
     subscribed = false
+    console.error("Failed to subscribe to Hub events:", err)
   }
 }

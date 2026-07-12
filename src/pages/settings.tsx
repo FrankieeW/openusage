@@ -11,24 +11,14 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { GlobalShortcutSection } from "@/components/global-shortcut-section";
-import { getBarFillLayout, getTrayIconSizePx } from "@/lib/tray-bars-icon";
 import {
-  AUTO_UPDATE_OPTIONS,
-  DISPLAY_MODE_OPTIONS,
   LOG_LEVEL_OPTIONS,
-  MENUBAR_ICON_STYLE_OPTIONS,
-  MENUBAR_METRIC_OPTIONS,
-  RESET_TIMER_DISPLAY_OPTIONS,
-  THEME_OPTIONS,
-  TIME_FORMAT_OPTIONS,
   type AutoUpdateIntervalMinutes,
   type DisplayMode,
   type GlobalShortcut,
@@ -39,242 +29,18 @@ import {
   type ThemeMode,
   type TimeFormatMode,
 } from "@/lib/settings";
-import { getTimeFormatter } from "@/lib/reset-tooltip";
 import type { TraySettingsPreview } from "@/hooks/app/use-tray-icon";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { hubCommands } from "@/lib/hub/commands";
-
-interface PluginConfig {
-  id: string;
-  name: string;
-  enabled: boolean;
-  sourceLabel: string | null;
-  version: string | null;
-}
-
-function sourceVersionLabel(sourceLabel: string | null, version: string | null): string | null {
-  if (sourceLabel && version) return `${sourceLabel} · v${version}`;
-  if (sourceLabel) return sourceLabel;
-  if (version) return `v${version}`;
-  return null;
-}
-
-const TRAY_PREVIEW_SIZE_PX = getTrayIconSizePx(1);
-
-const PREVIEW_BAR_TRACK_PX = 20;
+import { DisplaySettingsSections } from "@/pages/settings/display-settings-sections";
+import { SegmentedRadioGroup } from "@/pages/settings/segmented-radio-group";
+import {
+  SortablePluginItem,
+  type PluginConfig,
+} from "@/pages/settings/sortable-plugin-item";
 
 type CopyLogPathStatus = "idle" | "copying" | "copied" | "failed";
-
-function getPreviewBarLayout(fraction: number): { fillPercent: number; remainderPercent: number } {
-  const { fillW, remainderDrawW } = getBarFillLayout(PREVIEW_BAR_TRACK_PX, fraction);
-  return {
-    fillPercent: (fillW / PREVIEW_BAR_TRACK_PX) * 100,
-    remainderPercent: (remainderDrawW / PREVIEW_BAR_TRACK_PX) * 100,
-  };
-}
-
-function ProviderIconMask({
-  iconUrl,
-  isActive,
-  sizePx,
-}: {
-  iconUrl?: string;
-  isActive: boolean;
-  sizePx: number;
-}) {
-  const colorClass = isActive ? "bg-primary-foreground" : "bg-foreground";
-  if (iconUrl) {
-    return (
-      <div
-        aria-hidden
-        className={cn("shrink-0", colorClass)}
-        style={{
-          width: `${sizePx}px`,
-          height: `${sizePx}px`,
-          WebkitMaskImage: `url(${iconUrl})`,
-          WebkitMaskSize: "contain",
-          WebkitMaskRepeat: "no-repeat",
-          WebkitMaskPosition: "center",
-          maskImage: `url(${iconUrl})`,
-          maskSize: "contain",
-          maskRepeat: "no-repeat",
-          maskPosition: "center",
-        }}
-      />
-    );
-  }
-  const textClass = isActive ? "text-primary-foreground" : "text-foreground";
-  return (
-    <svg aria-hidden viewBox="0 0 26 26" className={cn("shrink-0", textClass)} style={{ width: `${sizePx}px`, height: `${sizePx}px` }}>
-      <circle cx="13" cy="13" r="9" fill="none" stroke="currentColor" strokeWidth="3.5" opacity={0.3} />
-    </svg>
-  );
-}
-
-function MenubarIconStylePreview({
-  style,
-  isActive,
-  traySettingsPreview,
-}: {
-  style: MenubarIconStyle;
-  isActive: boolean;
-  traySettingsPreview: TraySettingsPreview;
-}) {
-  const textClass = isActive ? "text-primary-foreground" : "text-foreground";
-
-  if (style === "provider") {
-    return (
-      <div className="inline-flex items-center gap-0.5">
-        <ProviderIconMask
-          iconUrl={traySettingsPreview.providerIconUrl}
-          isActive={isActive}
-          sizePx={TRAY_PREVIEW_SIZE_PX}
-        />
-        <span className={cn("text-[12px] font-semibold tabular-nums leading-none", textClass)}>
-          {traySettingsPreview.providerPercentText}
-        </span>
-      </div>
-    );
-  }
-
-  if (style === "bars") {
-    const trackClass = isActive ? "bg-primary-foreground/15" : "bg-foreground/15";
-    const remainderClass = isActive ? "bg-primary-foreground/20" : "bg-foreground/15";
-    const fillClass = isActive ? "bg-primary-foreground" : "bg-foreground";
-    const fractions = traySettingsPreview.bars.length > 0
-      ? traySettingsPreview.bars.map((b) => b.fraction ?? 0)
-      : [0.83, 0.7, 0.56];
-
-    return (
-      <div className="flex items-center">
-        <div className="flex flex-col gap-0.5 w-5">
-          {fractions.map((fraction, i) => {
-            const { fillPercent, remainderPercent } = getPreviewBarLayout(fraction);
-            return (
-              <div key={i} className={cn("relative h-1 rounded-sm", trackClass)}>
-                {remainderPercent > 0 && (
-                  <span
-                    aria-hidden
-                    className={remainderClass}
-                    style={{
-                      position: "absolute",
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: `${remainderPercent}%`,
-                      borderRadius: "1px 2px 2px 1px",
-                    }}
-                  />
-                )}
-                <div
-                  className={cn("h-1", fillClass)}
-                  style={{ width: `${fillPercent}%`, borderRadius: "2px 1px 1px 2px" }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  if (style === "donut") {
-    const fraction = traySettingsPreview.providerBars[0]?.fraction ?? 0;
-    const clamped = Math.max(0, Math.min(1, fraction));
-    return (
-      <div className="inline-flex items-center gap-1">
-        <ProviderIconMask
-          iconUrl={traySettingsPreview.providerIconUrl}
-          isActive={isActive}
-          sizePx={TRAY_PREVIEW_SIZE_PX}
-        />
-        <svg aria-hidden viewBox="0 0 26 26" className={cn("shrink-0", textClass)} style={{ width: `${TRAY_PREVIEW_SIZE_PX}px`, height: `${TRAY_PREVIEW_SIZE_PX}px` }}>
-          <circle
-            cx="13" cy="13" r="9"
-            fill="none" stroke="currentColor" strokeWidth="4"
-            opacity={isActive ? 0.2 : 0.15}
-          />
-          {clamped > 0 && (
-            <circle
-              cx="13" cy="13" r="9"
-              fill="none" stroke="currentColor" strokeWidth="4"
-              strokeLinecap="butt"
-              pathLength="100"
-              strokeDasharray={`${Math.round(clamped * 100)} 100`}
-              transform="rotate(-90 13 13)"
-            />
-          )}
-        </svg>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-function SortablePluginItem({
-  plugin,
-  onToggle,
-}: {
-  plugin: PluginConfig;
-  onToggle: (id: string) => void;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: plugin.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      onClick={() => onToggle(plugin.id)}
-      className={cn(
-        "flex items-center gap-3 px-3 py-2 rounded-md bg-card cursor-pointer",
-        "border border-transparent",
-        isDragging && "opacity-50 border-border"
-      )}
-    >
-      <button
-        type="button"
-        onClick={(e) => e.stopPropagation()}
-        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground transition-colors"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
-      <span className="flex-1 text-sm flex flex-col">
-        <span className={cn(!plugin.enabled && "text-muted-foreground")}>{plugin.name}</span>
-        {sourceVersionLabel(plugin.sourceLabel, plugin.version) && (
-          <span className="text-xs text-muted-foreground">
-            {sourceVersionLabel(plugin.sourceLabel, plugin.version)}
-          </span>
-        )}
-      </span>
-
-      {/* Wrap to stop Base UI's internal input.click() from bubbling to the row div */}
-      <span onClick={(e) => e.stopPropagation()}>
-        <Checkbox
-          key={`${plugin.id}-${plugin.enabled}`}
-          checked={plugin.enabled}
-          onCheckedChange={() => onToggle(plugin.id)}
-        />
-      </span>
-    </div>
-  );
-}
 
 interface SettingsPageProps {
   plugins: PluginConfig[];
@@ -390,216 +156,23 @@ export function SettingsPage({
 
   return (
     <div className="py-3 space-y-4">
-      <section>
-        <h3 className="text-lg font-semibold mb-0">Auto Refresh</h3>
-        <p className="text-sm text-muted-foreground mb-2">
-          How obsessive are you
-        </p>
-        <div className="bg-muted/50 rounded-lg p-1">
-          <div className="flex gap-1" role="radiogroup" aria-label="Auto-update interval">
-            {AUTO_UPDATE_OPTIONS.map((option) => {
-              const isActive = option.value === autoUpdateInterval;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => onAutoUpdateIntervalChange(option.value)}
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-      <section>
-        <h3 className="text-lg font-semibold mb-0">Usage Mode</h3>
-        <p className="text-sm text-muted-foreground mb-2">
-          Glass half full or half empty
-        </p>
-        <div className="bg-muted/50 rounded-lg p-1">
-          <div className="flex gap-1" role="radiogroup" aria-label="Usage display mode">
-            {DISPLAY_MODE_OPTIONS.map((option) => {
-              const isActive = option.value === displayMode;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => onDisplayModeChange(option.value)}
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-      <section>
-        <h3 className="text-lg font-semibold mb-0">Reset Timers</h3>
-        <p className="text-sm text-muted-foreground mb-2">
-          Countdown or clock time
-        </p>
-        <div className="bg-muted/50 rounded-lg p-1">
-          <div className="flex gap-1" role="radiogroup" aria-label="Reset timer display mode">
-            {RESET_TIMER_DISPLAY_OPTIONS.map((option) => {
-              const isActive = option.value === resetTimerDisplayMode;
-              const absoluteTimeExample = getTimeFormatter(timeFormatMode).format(new Date(2026, 1, 2, 11, 4));
-              const example = option.value === "relative" ? "5h 12m" : `today at ${absoluteTimeExample}`;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="flex-1 flex flex-col items-center gap-0 py-2 h-auto"
-                  onClick={() => onResetTimerDisplayModeChange(option.value)}
-                >
-                  <span>{option.label}</span>
-                  <span
-                    className={cn(
-                      "text-xs font-normal",
-                      isActive ? "text-primary-foreground/80" : "text-muted-foreground"
-                    )}
-                  >
-                    {example}
-                  </span>
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-      <section>
-        <h3 className="text-lg font-semibold mb-0">Time Format</h3>
-        <p className="text-sm text-muted-foreground mb-2">
-          12-hour or 24-hour clock
-        </p>
-        <div className="bg-muted/50 rounded-lg p-1">
-          <div className="flex gap-1" role="radiogroup" aria-label="Time format">
-            {TIME_FORMAT_OPTIONS.map((option) => {
-              const isActive = option.value === timeFormatMode;
-              const example = getTimeFormatter(option.value).format(new Date(2026, 1, 2, 11, 4));
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  aria-label={option.label}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="flex-1 flex flex-col items-center gap-0 py-2 h-auto"
-                  onClick={() => onTimeFormatModeChange(option.value)}
-                >
-                  <span>{option.label}</span>
-                  <span
-                    className={cn(
-                      "text-xs font-normal",
-                      isActive ? "text-primary-foreground/80" : "text-muted-foreground"
-                    )}
-                  >
-                    {example}
-                  </span>
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-      <section>
-        <h3 className="text-lg font-semibold mb-0">Menubar Icon</h3>
-        <p className="text-sm text-muted-foreground mb-2">
-          What shows in the menu bar
-        </p>
-        <div className="bg-muted/50 rounded-lg p-1">
-          <div className="flex gap-1" role="radiogroup" aria-label="Menubar icon style">
-            {MENUBAR_ICON_STYLE_OPTIONS.map((option) => {
-              const isActive = option.value === menubarIconStyle;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-label={option.label}
-                  aria-checked={isActive}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="flex-1 h-9 flex items-center justify-center"
-                  onClick={() => onMenubarIconStyleChange(option.value)}
-                >
-                  <MenubarIconStylePreview
-                    style={option.value}
-                    isActive={isActive}
-                    traySettingsPreview={traySettingsPreview}
-                  />
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground mt-3 mb-2">Metric</p>
-        <div className="bg-muted/50 rounded-lg p-1">
-          <div className="flex gap-1" role="radiogroup" aria-label="Menubar metric">
-            {MENUBAR_METRIC_OPTIONS.map((option) => {
-              const isActive = option.value === menubarMetric;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-label={option.label}
-                  aria-checked={isActive}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => onMenubarMetricChange(option.value)}
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-      <section>
-        <h3 className="text-lg font-semibold mb-0">App Theme</h3>
-        <p className="text-sm text-muted-foreground mb-2">
-          How it looks around here
-        </p>
-        <div className="bg-muted/50 rounded-lg p-1">
-          <div className="flex gap-1" role="radiogroup" aria-label="Theme mode">
-            {THEME_OPTIONS.map((option) => {
-              const isActive = option.value === themeMode;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => onThemeModeChange(option.value)}
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+      <DisplaySettingsSections
+        autoUpdateInterval={autoUpdateInterval}
+        onAutoUpdateIntervalChange={onAutoUpdateIntervalChange}
+        themeMode={themeMode}
+        onThemeModeChange={onThemeModeChange}
+        displayMode={displayMode}
+        onDisplayModeChange={onDisplayModeChange}
+        resetTimerDisplayMode={resetTimerDisplayMode}
+        onResetTimerDisplayModeChange={onResetTimerDisplayModeChange}
+        timeFormatMode={timeFormatMode}
+        onTimeFormatModeChange={onTimeFormatModeChange}
+        menubarIconStyle={menubarIconStyle}
+        onMenubarIconStyleChange={onMenubarIconStyleChange}
+        menubarMetric={menubarMetric}
+        onMenubarMetricChange={onMenubarMetricChange}
+        traySettingsPreview={traySettingsPreview}
+      />
       <GlobalShortcutSection
         globalShortcut={globalShortcut}
         onGlobalShortcutChange={onGlobalShortcutChange}
@@ -611,7 +184,7 @@ export function SettingsPage({
         </p>
         <div className="bg-muted/50 rounded-lg p-1">
           <div className="space-y-1" role="group" aria-label="Debug tools">
-            <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label="Debug level">
+            <SegmentedRadioGroup label="Debug level" className="grid grid-cols-3">
               {LOG_LEVEL_OPTIONS.map((option) => {
                 const isActive = option.value === logLevel;
                 return (
@@ -620,6 +193,7 @@ export function SettingsPage({
                     type="button"
                     role="radio"
                     aria-checked={isActive}
+                    tabIndex={isActive ? 0 : -1}
                     variant={isActive ? "default" : "outline"}
                     size="sm"
                     className="min-w-0"
@@ -629,7 +203,7 @@ export function SettingsPage({
                   </Button>
                 );
               })}
-            </div>
+            </SegmentedRadioGroup>
             <Button
               type="button"
               variant="outline"
@@ -664,7 +238,7 @@ export function SettingsPage({
         </label>
       </section>
       <section>
-        <h3 className="text-lg font-semibold mb-0">Plugin environment access</h3>
+        <h3 className="text-lg font-semibold mb-0">Plugin Environment Access</h3>
         <p className="text-sm text-muted-foreground mb-2">
           Off by default. Only enable for sources you trust.
         </p>

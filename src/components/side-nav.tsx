@@ -178,13 +178,13 @@ export function SideNav({
       ;(async () => {
         const reloadItem = await MenuItem.new({
           id: `ctx-reload-${pluginId}`,
-          text: "Refresh usage",
+          text: "Refresh Usage",
           enabled: isPluginRefreshAvailable ? isPluginRefreshAvailable(pluginId) : true,
           action: () => onPluginContextAction(pluginId, "reload"),
         })
         const removeItem = await MenuItem.new({
           id: `ctx-remove-${pluginId}`,
-          text: "Disable plugin",
+          text: "Disable Plugin",
           action: () => onPluginContextAction(pluginId, "remove"),
         })
         const bottomSeparator = await PredefinedMenuItem.new({ item: "Separator" })

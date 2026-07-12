@@ -220,8 +220,7 @@ export function GlobalShortcutSection({
     }
   }
 
-  const handleClear = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleClear = () => {
     onGlobalShortcutChange(null)
   }
 
@@ -268,27 +267,34 @@ export function GlobalShortcutSection({
         ) : (
           <div
             className={cn(
-              "w-full h-8 px-3 text-sm rounded-md border bg-muted/50",
-              "flex items-center text-left hover:bg-muted transition-colors cursor-pointer",
+              "w-full h-8 text-sm rounded-md border bg-muted/50",
+              "flex items-center overflow-hidden transition-colors",
               !hasShortcut && "text-muted-foreground"
             )}
-            onClick={startRecording}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") startRecording() }}
-            role="button"
-            tabIndex={0}
           >
-            <span>{getDisplayValue()}</span>
-            {hasShortcut ? (
+            <button
+              type="button"
+              onClick={startRecording}
+              className={cn(
+                "h-full min-w-0 flex-1 px-3 text-left outline-none hover:bg-muted",
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              )}
+            >
+              {getDisplayValue()}
+            </button>
+            {hasShortcut && (
               <button
                 type="button"
                 onClick={handleClear}
-                className="ml-auto p-0.5 rounded hover:bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
+                className={cn(
+                  "mr-2 shrink-0 rounded p-0.5 text-muted-foreground transition-colors",
+                  "outline-none hover:bg-background/50 hover:text-foreground",
+                  "focus-visible:ring-2 focus-visible:ring-ring",
+                )}
                 aria-label="Clear shortcut"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
-            ) : (
-              <span className="ml-auto text-xs text-muted-foreground">Click to set</span>
             )}
           </div>
         )}

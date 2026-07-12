@@ -25,7 +25,13 @@ export function parseGithubTreeUrl(input: string): ParsedSourceUrl | null {
 
   const owner = match[1]
   const repo = match[2].replace(/\.git$/i, "")
-  const branch = decodeURIComponent(match[3])
+  let branch: string
+  try {
+    branch = decodeURIComponent(match[3])
+  } catch (error) {
+    if (error instanceof URIError) return null
+    throw error
+  }
 
   if (!owner || !repo || !branch) return null
 

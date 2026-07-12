@@ -1,12 +1,20 @@
-import { describe, expect, it, vi, beforeEach } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const invokeMock = vi.fn()
+const listenMock = vi.fn()
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }))
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (...args: unknown[]) => listenMock(...args),
+}))
 
-import { useHubStore } from "./cache"
+import {
+  __resetHubSubscriptionsForTesting,
+  initHubSubscriptions,
+  useHubStore,
+} from "./cache"
 import type { HubBrowseView, Source } from "./types"
 
 function sampleSource(id: string): Source {
@@ -57,13 +65,20 @@ function sampleBrowse(sourceId: string, pluginId: string): HubBrowseView {
 
 describe("useHubStore", () => {
   beforeEach(() => {
+    __resetHubSubscriptionsForTesting()
     invokeMock.mockReset()
+    listenMock.mockReset()
+    listenMock.mockResolvedValue(vi.fn())
     useHubStore.setState({
       sources: [],
       browseBySource: {},
       loading: { sources: false, perSource: {}, perPlugin: {} },
       error: null,
     })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it("refreshSources populates sources and clears loading", async () => {
@@ -334,5 +349,44 @@ describe("useHubStore", () => {
     useHubStore.setState({ error: { code: "IoError", message: "x" } })
     useHubStore.getState().clearError()
     expect(useHubStore.getState().error).toBeNull()
+  })
+
+  it("rolls back and reports a partial event subscription failure", async () => {
+    const unlistenPluginsChanged = vi.fn()
+    const error = new Error("orphan listener unavailable")
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    listenMock
+      .mockResolvedValueOnce(unlistenPluginsChanged)
+      .mockRejectedValueOnce(error)
+
+    await initHubSubscriptions()
+
+    expect(unlistenPluginsChanged).toHaveBeenCalledOnce()
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to subscribe to Hub events:",
+      error,
+    )
+  })
+
+  it("retries event subscriptions without duplicating the first listener", async () => {
+    let activePluginsChangedListeners = 0
+    const registerPluginsChanged = () => {
+      activePluginsChangedListeners += 1
+      return () => {
+        activePluginsChangedListeners -= 1
+      }
+    }
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    listenMock
+      .mockImplementationOnce(async () => registerPluginsChanged())
+      .mockRejectedValueOnce(new Error("orphan listener unavailable"))
+      .mockImplementationOnce(async () => registerPluginsChanged())
+      .mockResolvedValueOnce(vi.fn())
+
+    await initHubSubscriptions()
+    await initHubSubscriptions()
+
+    expect(listenMock).toHaveBeenCalledTimes(4)
+    expect(activePluginsChangedListeners).toBe(1)
   })
 })

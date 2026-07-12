@@ -82,15 +82,17 @@ pub fn canonicalize(input: &str) -> Result<CanonicalSource, HubError> {
         };
     }
 
-    if let Some((owner, repo)) = trimmed.split_once('/') {
-        if !owner.contains('.') && !owner.is_empty() && !repo.is_empty() {
-            let repo_clean = repo.trim_end_matches(".git");
-            if is_simple_segment(owner) && is_simple_segment(repo_clean) {
-                return Ok(github(&format!(
-                    "https://github.com/{}/{}",
-                    owner, repo_clean
-                )));
-            }
+    if let Some((owner, repo)) = trimmed.split_once('/')
+        && !owner.contains('.')
+        && !owner.is_empty()
+        && !repo.is_empty()
+    {
+        let repo_clean = repo.trim_end_matches(".git");
+        if is_simple_segment(owner) && is_simple_segment(repo_clean) {
+            return Ok(github(&format!(
+                "https://github.com/{}/{}",
+                owner, repo_clean
+            )));
         }
     }
 

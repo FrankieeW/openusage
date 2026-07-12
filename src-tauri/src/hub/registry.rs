@@ -2,7 +2,8 @@
 // Tests below expect round-trip + atomic write + crash recovery semantics.
 
 use std::path::Path;
-#[cfg(test)] use std::path::PathBuf;
+#[cfg(test)]
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -90,15 +91,13 @@ pub fn read(hub_dir: &Path) -> Result<RegistryFile, RegistryError> {
     }
 
     let tmp = hub_dir.join("sources.json.tmp");
-    if tmp.exists() {
-        if let Ok(text) = std::fs::read_to_string(&tmp) {
-            if let Ok(parsed) = serde_json::from_str::<RegistryFile>(&text) {
-                if parsed.version == CURRENT_VERSION {
-                    let _ = std::fs::rename(&tmp, &main);
-                    return Ok(parsed);
-                }
-            }
-        }
+    if tmp.exists()
+        && let Ok(text) = std::fs::read_to_string(&tmp)
+        && let Ok(parsed) = serde_json::from_str::<RegistryFile>(&text)
+        && parsed.version == CURRENT_VERSION
+    {
+        let _ = std::fs::rename(&tmp, &main);
+        return Ok(parsed);
     }
 
     Ok(default_registry())
@@ -115,8 +114,14 @@ pub fn write(hub_dir: &Path, file: &RegistryFile) -> Result<(), RegistryError> {
     let tmp = hub_dir.join("sources.json.tmp");
     std::fs::write(&tmp, text)
         .map_err(|e| RegistryError::Io(format!("write {}: {}", tmp.display(), e)))?;
-    std::fs::rename(&tmp, &main)
-        .map_err(|e| RegistryError::Io(format!("rename {} -> {}: {}", tmp.display(), main.display(), e)))?;
+    std::fs::rename(&tmp, &main).map_err(|e| {
+        RegistryError::Io(format!(
+            "rename {} -> {}: {}",
+            tmp.display(),
+            main.display(),
+            e
+        ))
+    })?;
     Ok(())
 }
 
@@ -204,11 +209,7 @@ mod tests {
             sources: vec![sample_source("recovered")],
         };
         let tmp_path = dir.join("sources.json.tmp");
-        fs::write(
-            &tmp_path,
-            serde_json::to_string(&recovered).unwrap(),
-        )
-        .unwrap();
+        fs::write(&tmp_path, serde_json::to_string(&recovered).unwrap()).unwrap();
 
         let file = read(&dir).expect("read should succeed");
         assert_eq!(file.sources.len(), 1);

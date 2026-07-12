@@ -11,11 +11,11 @@ pub fn initialize_plugins(
     app_data_dir: &Path,
     _resource_dir: &Path,
 ) -> (PathBuf, Vec<LoadedPlugin>) {
-    if let Some(dev_dir) = find_dev_plugins_dir() {
-        if !is_dir_empty(&dev_dir) {
-            let plugins = load_active_plugins_from_dir(&dev_dir);
-            return (dev_dir, plugins);
-        }
+    if let Some(dev_dir) = find_dev_plugins_dir()
+        && !is_dir_empty(&dev_dir)
+    {
+        let plugins = load_active_plugins_from_dir(&dev_dir);
+        return (dev_dir, plugins);
     }
 
     let install_dir = app_data_dir.join("plugins");
@@ -41,7 +41,6 @@ fn load_active_plugins_from_dir(plugins_dir: &Path) -> Vec<LoadedPlugin> {
         .collect()
 }
 
-#[allow(dead_code)] // wired by hub/install.rs hot-reload in a later commit
 pub fn reload_from_install_dir(plugins_dir: &Path) -> Vec<LoadedPlugin> {
     load_active_plugins_from_dir(plugins_dir)
 }
@@ -71,7 +70,7 @@ fn is_dir_empty(path: &Path) -> bool {
             true
         }
     }
-	}
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,7 +133,7 @@ mod tests {
     }
 
     fn write_plugin_at(plugin_dir: &Path, id: &str, name: &str) {
-        fs::create_dir_all(&plugin_dir).expect("create plugin dir");
+        fs::create_dir_all(plugin_dir).expect("create plugin dir");
         fs::write(
             plugin_dir.join("plugin.json"),
             format!(

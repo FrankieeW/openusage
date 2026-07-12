@@ -1836,9 +1836,9 @@ describe("App", () => {
     const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
     await userEvent.click(settingsButtons[0])
 
-    // Should show the placeholder text (appears twice: as main text and as hint)
+    // The shortcut trigger should show one clear placeholder.
     const placeholders = await screen.findAllByText(/Click to set/i)
-    expect(placeholders.length).toBeGreaterThan(0)
+    expect(placeholders).toHaveLength(1)
   })
 
   it("logs error when loading global shortcut fails", async () => {

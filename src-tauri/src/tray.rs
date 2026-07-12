@@ -96,10 +96,7 @@ pub fn get_stored_log_level_value(app_handle: &AppHandle) -> &'static str {
     log_level_to_str(get_stored_log_level(app_handle))
 }
 
-pub fn set_stored_log_level(
-    app_handle: &AppHandle,
-    level: log::LevelFilter,
-) -> Result<(), String> {
+pub fn set_stored_log_level(app_handle: &AppHandle, level: log::LevelFilter) -> Result<(), String> {
     let level_str = log_level_to_str(level);
     log::info!("Log level changing to {:?}", level);
     let store = app_handle
@@ -301,7 +298,10 @@ pub fn create(app_handle: &AppHandle) -> tauri::Result<()> {
         })
         .on_tray_icon_event(move |tray, event| {
             let TrayIconEvent::Click {
-                button, button_state, rect, ..
+                button,
+                button_state,
+                rect,
+                ..
             } = event
             else {
                 return;
